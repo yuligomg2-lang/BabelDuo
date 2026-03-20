@@ -187,7 +187,14 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
           referrerPolicy="no-referrer"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>
+            {user.isGuest && (
+              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[8px] font-bold uppercase rounded-md">
+                Invitado
+              </span>
+            )}
+          </div>
           <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
             {LANGUAGES.find(l => l.code === user.language)?.name}
           </p>

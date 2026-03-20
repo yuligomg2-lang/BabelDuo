@@ -121,19 +121,21 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
       }
 
       const roomDoc = snapshot.docs[0];
-      const roomData = roomDoc.data() as Room;
+      const roomData = { id: roomDoc.id, ...roomDoc.data() } as Room;
 
       if (!roomData.members.includes(user.uid)) {
         try {
           await updateDoc(doc(db, 'rooms', roomDoc.id), {
             members: arrayUnion(user.uid)
           });
+          // Update local data for immediate UI response
+          roomData.members.push(user.uid);
         } catch (updateErr) {
           handleFirestoreError(updateErr, OperationType.UPDATE, `rooms/${roomDoc.id}`);
         }
       }
 
-      onSelectRoom({ id: roomDoc.id, ...roomData });
+      onSelectRoom(roomData);
       setShowJoin(false);
       setInviteCode('');
     } catch (err: any) {

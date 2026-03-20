@@ -48,6 +48,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
     }
   }, [messages]);
 
+  useEffect(() => {
+    if (!window.visualViewport) return;
+    
+    const handleResize = () => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    };
+    
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => window.visualViewport?.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -159,9 +172,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className="bg-white p-4 border-bottom border-gray-100 flex items-center gap-4 shadow-sm z-10">
+      <div className="flex-shrink-0 bg-white p-4 border-b border-gray-100 flex items-center gap-4 shadow-sm z-10">
         <button
           onClick={onBack}
           className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
@@ -201,7 +214,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
       {/* Messages */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar"
+        className="flex-1 overflow-y-auto p-4 md:p-6 pb-10 space-y-4 md:space-y-6 custom-scrollbar min-h-0 overscroll-contain"
       >
         {error && (
           <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1">
@@ -217,7 +230,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         <AnimatePresence initial={false}>
           {messages.map((msg) => {
             const isMe = msg.senderId === user.uid;
-            const translation = msg.translations[user.language];
+            const translation = msg.translations?.[user.language];
 
             return (
               <motion.div
@@ -280,19 +293,24 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
       </div>
 
       {/* Input */}
-      <div className="p-4 bg-white border-t border-gray-100">
+      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 z-20 relative">
         <form onSubmit={handleSendMessage} className="flex gap-3">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                handleSendMessage(e);
+              }
+            }}
             placeholder="Escribe un mensaje..."
-            className="flex-1 bg-gray-50 border-none rounded-2xl px-6 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
+            className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl px-6 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
           />
           <button
             type="submit"
             disabled={!inputText.trim() || loading}
-            className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none"
+            className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none flex-shrink-0"
           >
             <Send className="w-5 h-5" />
           </button>

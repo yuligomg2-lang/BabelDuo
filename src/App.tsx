@@ -217,25 +217,25 @@ export default function App() {
         </div>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        <main className="flex-1 flex flex-col h-[100dvh] md:h-screen overflow-hidden relative">
           {!user ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center overflow-y-auto">
               <Auth user={user} onUserUpdate={setUser} />
             </div>
           ) : (
-            <div className="flex-1 flex flex-col md:flex-row h-full">
+            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
               {/* Sidebar List */}
-              <div className={`w-full md:w-96 bg-white border-r border-gray-100 flex flex-col ${selectedRoom ? 'hidden md:flex' : 'flex'}`}>
-                <div className="p-4 border-b border-gray-50">
+              <div className={`w-full md:w-96 bg-white border-r border-gray-100 flex flex-col min-h-0 ${selectedRoom ? 'hidden md:flex' : 'flex-1 md:flex'}`}>
+                <div className="flex-shrink-0 p-4 border-b border-gray-50">
                   <Auth user={user} onUserUpdate={setUser} />
                 </div>
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden min-h-0">
                   <RoomList user={user} onSelectRoom={setSelectedRoom} />
                 </div>
               </div>
 
               {/* Chat Area */}
-              <div className={`flex-1 flex flex-col ${!selectedRoom ? 'hidden md:flex' : 'flex'}`}>
+              <div className={`flex-1 flex flex-col min-h-0 relative ${!selectedRoom ? 'hidden md:flex' : 'flex h-full'}`}>
                 {selectedRoom ? (
                   <ChatRoom 
                     room={selectedRoom} 
@@ -262,6 +262,9 @@ export default function App() {
       <DiagnosticPanel />
 
       <style>{`
+        body {
+          overscroll-behavior: none;
+        }
         .custom-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
