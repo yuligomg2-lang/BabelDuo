@@ -238,14 +238,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
   useEffect(() => {
     if (messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg.senderId !== user.uid && 
-          (!lastMsg.translations || !lastMsg.translations[user.language]) && 
-          translatingId !== lastMsg.id) {
-        getTranslation(lastMsg);
+      // Find all messages that need translation for the current user's language
+      const untranslatedMessages = messages.filter(msg => 
+        msg.senderId !== user.uid && 
+        (!msg.translations || !msg.translations[user.language]) &&
+        translatingId !== msg.id
+      );
+
+      if (untranslatedMessages.length > 0) {
+        // Translate the first one found (they will be processed sequentially as the state updates)
+        getTranslation(untranslatedMessages[0]);
       }
     }
-  }, [messages.length, user.language, translatingId]);
+  }, [messages, user.language, translatingId]);
 
   const getTranslation = async (message: Message) => {
     if (message.translations[user.language]) return;
@@ -342,18 +347,32 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   const startRecording = async () => {
     setRecordingError(null);
     try {
+      const isInIframe = window.self !== window.top;
+      
+      if (isInIframe) {
+        setRecordingError("El micrófono está bloqueado por seguridad dentro del visor. Por favor, abre la aplicación en una pestaña nueva usando el botón de abajo.");
+        return;
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Tu navegador no soporta la grabación de audio.");
+        throw new Error("Tu navegador no soporta la grabación de audio o está bloqueada por seguridad.");
       }
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Check for supported MIME types
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-        ? 'audio/webm' 
-        : MediaRecorder.isTypeSupported('audio/mp4') 
-          ? 'audio/mp4' 
-          : 'audio/aac';
+      // Better MIME type detection for mobile
+      let mimeType = 'audio/webm';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+          mimeType = 'audio/aac';
+        }
+      }
 
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
@@ -532,29 +551,46 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
         className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 space-y-4 md:space-y-6 custom-scrollbar min-h-0 overscroll-contain"
       >
         {error && (
-          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1 relative">
+          <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1 relative shadow-sm">
             <button 
               onClick={() => setError(null)}
-              className="absolute top-2 right-2 text-red-400 hover:text-red-600"
+              className="absolute top-2 right-2 text-red-400 hover:text-red-600 p-1"
             >
-              <Check className="w-3 h-3" />
+              <Check className="w-4 h-4" />
             </button>
-            <p className="mb-2">{error}</p>
-            <div className="flex flex-col gap-2">
-              <a 
-                href={window.location.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 hover:text-indigo-800 transition-colors underline"
-              >
-                Abrir en una pestaña nueva para habilitar el micrófono
-              </a>
-              <button 
-                onClick={() => (window as any).openDiagnostics?.()}
-                className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
-              >
-                Ver detalles técnicos
-              </button>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <Mic className="w-5 h-5 text-red-600" />
+              </div>
+              <p className="font-medium text-sm leading-tight">{error}</p>
+              
+              <div className="flex flex-col gap-2 w-full">
+                <button 
+                  onClick={() => {
+                    setError(null);
+                    startRecording();
+                  }}
+                  className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold uppercase tracking-wider hover:bg-red-700 transition-colors"
+                >
+                  Reintentar Grabación
+                </button>
+                
+                <a 
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 hover:text-indigo-800 transition-colors underline py-2"
+                >
+                  Abrir en una pestaña nueva (Recomendado para móviles)
+                </a>
+                
+                <button 
+                  onClick={() => (window as any).openDiagnostics?.()}
+                  className="text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Ver detalles técnicos
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -602,23 +638,25 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                         />
                       </div>
                     )}
-                    <p className="text-sm leading-relaxed font-medium">
-                      {translation || msg.text || <span className="italic opacity-50">Enviando...</span>}
-                    </p>
-                    
-                    {translation && translation !== msg.text && (
-                      <div className={`mt-3 pt-3 border-t ${isMe ? 'border-indigo-500/50' : 'border-white/20'}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <Globe className={`w-3 h-3 ${isMe ? 'text-indigo-200' : 'text-white/70'}`} />
-                          <span className={`text-[10px] font-bold uppercase tracking-tighter ${isMe ? 'text-indigo-200' : 'text-white/70'}`}>
-                            Traducción ({user.language})
-                          </span>
+                    <div className="flex flex-col gap-3">
+                      <p className="text-sm leading-relaxed font-medium">
+                        {msg.text || <span className="italic opacity-50">Enviando...</span>}
+                      </p>
+                      
+                      {translation && translation !== msg.text && (
+                        <div className={`pt-3 border-t ${isMe ? 'border-indigo-500/50' : 'border-white/20'}`}>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Globe className={`w-3 h-3 ${isMe ? 'text-indigo-200' : 'text-white/70'}`} />
+                            <span className={`text-[10px] font-bold uppercase tracking-tighter ${isMe ? 'text-indigo-200' : 'text-white/70'}`}>
+                              Traducción ({user.language})
+                            </span>
+                          </div>
+                          <p className={`text-sm italic ${isMe ? 'text-indigo-50' : 'text-white/90'}`}>
+                            {translation}
+                          </p>
                         </div>
-                        <p className={`text-sm italic ${isMe ? 'text-indigo-50' : 'text-white/90'}`}>
-                          {translation}
-                        </p>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
 
                   {!translation && (

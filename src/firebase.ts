@@ -1,10 +1,16 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, getDocFromServer, arrayUnion, deleteField, deleteDoc, arrayRemove } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Explicitly set persistence to browserLocalPersistence
+setPersistence(auth, browserLocalPersistence).catch(err => {
+  console.error("Error setting persistence:", err);
+});
+
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

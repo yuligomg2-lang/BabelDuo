@@ -23,10 +23,14 @@ export default function App() {
     const safetyTimeout = setTimeout(() => {
       if (isMounted && loading) {
         console.warn("Auth initialization safety timeout reached");
-        setLoadingStatus('La conexión está tardando demasiado. Mostrando pantalla de inicio...');
+        const isInIframe = window.self !== window.top;
+        const msg = isInIframe 
+          ? 'La conexión está tardando. Si el inicio de sesión no persiste, intenta abrir la app en una pestaña nueva.'
+          : 'La conexión está tardando demasiado. Mostrando pantalla de inicio...';
+        setLoadingStatus(msg);
         setLoading(false);
       }
-    }, 12000);
+    }, 15000);
 
     const statusTimeout = setTimeout(() => {
       if (isMounted && loading) {
@@ -47,17 +51,22 @@ export default function App() {
 
       try {
         setLoadingStatus('Cargando perfil de usuario...');
-        // Use getDocFromServer to bypass cache if it's stuck or if we're in a weird state
-        // Add a local timeout for this specific call
-        const userDocPromise = getDocFromServer(doc(db, 'users', firebaseUser.uid));
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Timeout al cargar perfil")), 8000)
-        );
-
-        const userDoc = await Promise.race([userDocPromise, timeoutPromise]) as any;
+        
+        // Try local cache first, then server
+        let userDoc;
+        try {
+          userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        } catch (e) {
+          console.warn("Cache fetch failed, trying server...", e);
+          const userDocPromise = getDocFromServer(doc(db, 'users', firebaseUser.uid));
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error("Timeout al conectar con el servidor")), 8000)
+          );
+          userDoc = await Promise.race([userDocPromise, timeoutPromise]) as any;
+        }
 
         if (isMounted) {
-          if (userDoc.exists()) {
+          if (userDoc && userDoc.exists()) {
             setUser(userDoc.data() as UserProfile);
           } else if (firebaseUser.isAnonymous) {
             // AUTO-RECOVERY for guests: if signed in but no doc, create it
