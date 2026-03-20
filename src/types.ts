@@ -20,6 +20,7 @@ export interface Room {
   inviteCode: string;
   members: string[];
   expiresAt?: any; // For guest-only links
+  typing?: Record<string, string>; // uid -> displayName
 }
 
 export interface Message {
@@ -31,6 +32,7 @@ export interface Message {
   text: string;
   translations: Record<string, string>;
   createdAt: any;
+  readBy?: string[]; // uids
 }
 
 export const LANGUAGES = [

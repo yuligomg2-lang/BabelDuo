@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, handleFirestoreError, OperationType } from '../firebase';
+import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, handleFirestoreError, OperationType, arrayUnion, deleteField, deleteDoc, arrayRemove } from '../firebase';
 import { Room, UserProfile, Message } from '../types';
 import { translateMessage } from '../services/geminiService';
-import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check } from 'lucide-react';
+import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check, CheckCheck, Trash2, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ChatRoomProps {
@@ -49,15 +49,34 @@ const getUserColorInfo = (userId: string) => {
   return COLOR_MAP[key];
 };
 
-export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
+export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onBack }) => {
+  const [room, setRoom] = useState<Room>(initialRoom);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [translatingId, setTranslatingId] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Listen to room updates for typing status
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'rooms', initialRoom.id), (snapshot) => {
+      if (snapshot.exists()) {
+        setRoom({ id: snapshot.id, ...snapshot.data() } as Room);
+      } else {
+        onBack();
+      }
+    }, (err) => {
+      console.error("Room snapshot error:", err);
+      onBack();
+    });
+    return () => unsubscribe();
+  }, [initialRoom.id, onBack]);
 
   useEffect(() => {
     setError(null);
@@ -71,17 +90,29 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         return { 
           id: doc.id, 
           ...data,
-          // Ensure text is never undefined to avoid blank bubbles
           text: data.text || ''
         } as Message;
       });
       setMessages(msgs);
+
+      // Mark unread messages as read
+      msgs.forEach(async (msg) => {
+        if (msg.senderId !== user.uid && (!msg.readBy || !msg.readBy.includes(user.uid))) {
+          try {
+            await updateDoc(doc(db, 'rooms', room.id, 'messages', msg.id), {
+              readBy: arrayUnion(user.uid)
+            });
+          } catch (e) {
+            console.warn("Error marking message as read:", e);
+          }
+        }
+      });
     }, (err) => {
       console.error("ChatRoom snapshot error:", err);
       setError("Error al cargar los mensajes. Verifica tus permisos.");
     });
     return () => unsubscribe();
-  }, [room.id]);
+  }, [room.id, user.uid]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -102,12 +133,50 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
     return () => window.visualViewport?.removeEventListener('resize', handleResize);
   }, []);
 
+  // Handle typing status
+  const updateTypingStatus = async (isTyping: boolean) => {
+    try {
+      const roomRef = doc(db, 'rooms', room.id);
+      await updateDoc(roomRef, {
+        [`typing.${user.uid}`]: isTyping ? user.displayName : deleteField()
+      });
+    } catch (e) {
+      console.warn("Error updating typing status:", e);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputText(e.target.value);
+
+    // Update typing status
+    if (!typingTimeoutRef.current) {
+      updateTypingStatus(true);
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      updateTypingStatus(false);
+      typingTimeoutRef.current = null;
+    }, 3000);
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
     
     const text = inputText;
     setInputText('');
+    
+    // Clear typing status immediately
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    updateTypingStatus(false);
+
     setLoading(true);
 
     const path = `rooms/${room.id}/messages`;
@@ -119,7 +188,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         senderLanguage: user.language,
         text: text,
         translations: {},
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        readBy: [user.uid]
       });
 
       const timeoutPromise = new Promise((_, reject) => 
@@ -144,8 +214,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
   useEffect(() => {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      // Only translate if it's from someone else, hasn't been translated to our language,
-      // and we're not already translating it.
       if (lastMsg.senderId !== user.uid && 
           (!lastMsg.translations || !lastMsg.translations[user.language]) && 
           translatingId !== lastMsg.id) {
@@ -183,7 +251,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
       "Bonjour! C'est un message de test en français pour verificar la traducción.",
       "Ciao! Questo è un messaggio di prova in italiano per testare la traduzione.",
       "Hallo! Dies ist eine Testnachricht auf Deutsch, um die Übersetzung zu testen.",
-      "Olá! Esta é uma mensagem de teste em português para testar a tradução."
+      "Olá! Esta é uma mensagem de teste em português para testar a traduzione."
     ];
     const randomMsg = testMessages[Math.floor(Math.random() * testMessages.length)];
     const randomLangs = ['en', 'fr', 'it', 'de', 'pt'];
@@ -198,7 +266,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         senderLanguage: randomLang,
         text: randomMsg,
         translations: {},
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        readBy: ['babel-bot']
       });
     } catch (error) {
       console.error("Simulate message error:", error);
@@ -216,6 +285,38 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const handleDeleteRoom = async () => {
+    try {
+      await deleteDoc(doc(db, 'rooms', room.id));
+      onBack();
+    } catch (error: any) {
+      console.error("Delete room error:", error);
+      setError("No se pudo eliminar la sala.");
+      try {
+        handleFirestoreError(error, OperationType.DELETE, `rooms/${room.id}`);
+      } catch (e) {}
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    try {
+      await updateDoc(doc(db, 'rooms', room.id), {
+        members: arrayRemove(user.uid)
+      });
+      onBack();
+    } catch (error: any) {
+      console.error("Leave room error:", error);
+      setError("No se pudo salir de la sala.");
+      try {
+        handleFirestoreError(error, OperationType.UPDATE, `rooms/${room.id}`);
+      } catch (e) {}
+    }
+  };
+
+  const typingUsers = room.typing ? Object.entries(room.typing)
+    .filter(([uid]) => uid !== user.uid)
+    .map(([_, name]) => name) : [];
 
   return (
     <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
@@ -240,6 +341,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
           >
             <Share2 className="w-5 h-5" />
           </button>
+          
+          {room.createdBy === user.uid ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+              title="Eliminar conversación"
+              style={{ color: '#9ca3af' }}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowLeaveConfirm(true)}
+              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+              title="Salir de la conversación"
+              style={{ color: '#9ca3af' }}
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
+
           <button
             onClick={handleSimulateMessage}
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors border border-amber-100"
@@ -279,6 +401,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
           {messages.map((msg) => {
             const isMe = msg.senderId === user.uid;
             const translation = msg.translations?.[user.language];
+            const isRead = msg.readBy && msg.readBy.length > 1; // At least one other person read it
 
             return (
               <motion.div
@@ -287,19 +410,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
               >
-                {!isMe && (
-                  <div className="flex items-center gap-2 mb-1 ml-1">
-                    <span className={`text-[10px] font-bold uppercase tracking-widest ${getUserColorInfo(msg.senderId).text}`}>
-                      {msg.senderName}
-                    </span>
-                    {msg.senderLanguage && (
-                      <div className="flex items-center gap-1 bg-gray-100 px-1.5 py-0.5 rounded-md border border-gray-200">
-                        <span className="text-[10px]">{getFlag(msg.senderLanguage)}</span>
-                        <span className="text-[8px] font-black text-gray-500 uppercase">{msg.senderLanguage}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className={`flex items-center gap-2 mb-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${isMe ? 'text-indigo-600' : getUserColorInfo(msg.senderId).text}`}>
+                    {isMe ? 'Tú' : msg.senderName}
+                  </span>
+                  {(isMe ? user.language : msg.senderLanguage) && (
+                    <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${isMe ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-100 border-gray-200'}`}>
+                      <span className="text-[10px]">{getFlag(isMe ? user.language : msg.senderLanguage!)}</span>
+                      <span className={`text-[8px] font-black uppercase ${isMe ? 'text-indigo-500' : 'text-gray-500'}`}>
+                        {isMe ? user.language : msg.senderLanguage}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <div className={`max-w-[85%] md:max-w-[80%] group relative`}>
                   <div 
                     className={`p-4 rounded-2xl shadow-sm ${
@@ -341,11 +464,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
                     </button>
                   )}
                 </div>
-                <div className={`flex items-center gap-1 mt-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
+                <div className={`flex items-center gap-1.5 mt-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
                   <Clock className="w-3 h-3 text-gray-300" />
                   <span className="text-[9px] text-gray-400 font-medium">
                     {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
                   </span>
+                  {isMe && (
+                    <div className="flex items-center ml-0.5">
+                      {isRead ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5 text-gray-300" />
+                      )}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );
@@ -353,13 +485,36 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         </AnimatePresence>
       </div>
 
+      {/* Typing Indicator */}
+      <AnimatePresence>
+        {typingUsers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="px-6 py-2 bg-white/80 backdrop-blur-sm border-t border-gray-50 flex items-center gap-2"
+          >
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+            </div>
+            <span className="text-[10px] font-medium text-gray-500 italic">
+              {typingUsers.length === 1 
+                ? `${typingUsers[0]} está escribiendo...` 
+                : `${typingUsers.length} personas están escribiendo...`}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input */}
       <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 z-20 relative">
         <form onSubmit={handleSendMessage} className="flex gap-3">
           <input
             type="text"
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 handleSendMessage(e);
@@ -416,6 +571,87 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
               >
                 Cerrar
               </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modals */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
+            >
+              <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-8 h-8 text-red-500" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 text-center mb-2">¿Eliminar conversación?</h3>
+              <p className="text-sm text-gray-500 text-center mb-6">
+                Esta acción eliminará la sala y todos sus mensajes para todos los participantes. No se puede deshacer.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 px-4 py-3 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteRoom}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors shadow-lg shadow-red-100"
+                >
+                  Eliminar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showLeaveConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6"
+            >
+              <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <LogOut className="w-8 h-8 text-amber-500" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 text-center mb-2">¿Salir del grupo?</h3>
+              <p className="text-sm text-gray-500 text-center mb-6">
+                ¿Deseas salir de este grupo de conversación? Ya no podrás ver ni enviar mensajes.
+              </p>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLeaveConfirm(false)}
+                  className="flex-1 px-4 py-3 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleLeaveRoom}
+                  className="flex-1 px-4 py-3 bg-amber-600 text-white rounded-2xl font-bold hover:bg-amber-700 transition-colors shadow-lg shadow-amber-100"
+                >
+                  Salir
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}

@@ -30,7 +30,8 @@
         "isPrivate": { "type": "boolean" },
         "inviteCode": { "type": "string" },
         "members": { "type": "array", "items": { "type": "string" } },
-        "expiresAt": { "type": "string", "format": "date-time" }
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "typing": { "type": "object", "description": "Map of uid -> displayName" }
       },
       "required": ["id", "name", "theme", "languages", "createdBy", "isPrivate", "inviteCode", "members"]
     },
@@ -46,7 +47,8 @@
         "senderLanguage": { "type": "string" },
         "text": { "type": "string" },
         "translations": { "type": "object", "description": "Map of langCode -> translatedText" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of user IDs who have read the message" }
       },
       "required": ["id", "roomId", "senderId", "senderName", "text", "createdAt"]
     }

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, getDocFromServer, arrayUnion } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, getDocFromServer, arrayUnion, deleteField, deleteDoc, arrayRemove } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
@@ -9,7 +9,7 @@ export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-export { signInWithPopup, signInAnonymously, signOut, onAuthStateChanged, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, arrayUnion, getDocFromServer };
+export { signInWithPopup, signInAnonymously, signOut, onAuthStateChanged, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, arrayUnion, getDocFromServer, deleteField, deleteDoc, arrayRemove };
 
 export enum OperationType {
   CREATE = 'create',
