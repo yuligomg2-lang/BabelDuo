@@ -41,16 +41,35 @@ export async function getRoomSuggestions(user: UserProfile, rooms: Room[]): Prom
   }
 }
 
-export async function detectLanguage(text: string): Promise<string> {
+export async function transcribeAudio(base64Audio: string, mimeType: string, targetLang: string): Promise<{ transcription: string; translation: string }> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-    const model = ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Detect the language of the following text and return only the ISO 639-1 language code (e.g., "en", "es").\n\nText: ${text}`,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: base64Audio,
+              mimeType: mimeType,
+            },
+          },
+          {
+            text: `Transcribe this audio. Then, translate the transcription to the language with code "${targetLang}". 
+            Return the result in JSON format with two fields: "transcription" and "translation". 
+            Only return the JSON object, nothing else.`,
+          },
+        ],
+      },
+      config: {
+        responseMimeType: "application/json",
+      },
     });
-    const response = await model;
-    return response.text?.trim().toLowerCase() || "en";
+
+    const result = JSON.parse(response.text || '{"transcription": "", "translation": ""}');
+    return result;
   } catch (error) {
-    return "en";
+    console.error("Audio transcription/translation error:", error);
+    return { transcription: "", translation: "" };
   }
 }

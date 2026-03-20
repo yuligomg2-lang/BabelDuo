@@ -33,6 +33,8 @@ export interface Message {
   translations: Record<string, string>;
   createdAt: any;
   readBy?: string[]; // uids
+  audioData?: string; // base64 audio
+  isAudioTranscription?: boolean;
 }
 
 export const LANGUAGES = [

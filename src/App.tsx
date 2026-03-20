@@ -214,7 +214,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+      <div className="h-full bg-gray-50 flex flex-col md:flex-row overflow-hidden overscroll-none" style={{ maxHeight: '-webkit-fill-available' }}>
         {/* Sidebar / Navigation (Desktop) */}
         <div className="hidden md:flex w-20 bg-white border-r border-gray-100 flex-col items-center py-8 gap-8 z-20">
           <div 
@@ -251,7 +251,7 @@ export default function App() {
         </div>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col h-[100dvh] md:h-screen overflow-hidden relative">
+        <main className="flex-1 flex flex-col h-full overflow-hidden relative" style={{ maxHeight: '-webkit-fill-available' }}>
           {!user ? (
             <div className="flex-1 flex items-center justify-center overflow-y-auto">
               <Auth user={user} onUserUpdate={setUser} />
@@ -269,7 +269,7 @@ export default function App() {
               </div>
 
               {/* Chat Area */}
-              <div className={`flex-1 flex flex-col min-h-0 relative ${!selectedRoom ? 'hidden md:flex' : 'flex h-full'}`}>
+              <div className={`flex-1 flex flex-col min-h-0 relative h-full ${!selectedRoom ? 'hidden md:flex' : 'flex'}`} style={{ maxHeight: '-webkit-fill-available' }}>
                 {selectedRoom ? (
                   <ChatRoom 
                     room={selectedRoom} 

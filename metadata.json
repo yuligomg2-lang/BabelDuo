@@ -1,5 +1,5 @@
 {
   "name": "Babel Dúo",
   "description": "Chat multilingüe con traducción en tiempo real usando Gemini.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone"]
 }

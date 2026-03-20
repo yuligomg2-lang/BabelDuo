@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, handleFirestoreError, OperationType, arrayUnion, deleteField, deleteDoc, arrayRemove } from '../firebase';
 import { Room, UserProfile, Message } from '../types';
-import { translateMessage } from '../services/geminiService';
-import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check, CheckCheck, Trash2, LogOut } from 'lucide-react';
+import { translateMessage, transcribeAudio } from '../services/geminiService';
+import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check, CheckCheck, Trash2, LogOut, Mic, Square, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ChatRoomProps {
@@ -58,8 +58,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   const [showShare, setShowShare] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -77,6 +84,24 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
     });
     return () => unsubscribe();
   }, [initialRoom.id, onBack]);
+
+  useEffect(() => {
+    if (navigator.permissions && (navigator.permissions as any).query) {
+      (navigator.permissions as any).query({ name: 'microphone' })
+        .then((status: any) => {
+          if (status.state === 'denied') {
+            setError("El acceso al micrófono está bloqueado. Por favor, habilítalo en la configuración de tu navegador.");
+          }
+          status.onchange = () => {
+            if (status.state === 'denied') {
+              setError("El acceso al micrófono está bloqueado.");
+            } else if (status.state === 'granted') {
+              setError(null);
+            }
+          };
+        });
+    }
+  }, []);
 
   useEffect(() => {
     setError(null);
@@ -314,12 +339,132 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
     }
   };
 
+  const startRecording = async () => {
+    setRecordingError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Tu navegador no soporta la grabación de audio.");
+      }
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Check for supported MIME types
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : MediaRecorder.isTypeSupported('audio/mp4') 
+          ? 'audio/mp4' 
+          : 'audio/aac';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (audioBlob.size > 700000) {
+          setError("El audio es demasiado largo. Intenta grabar menos de 30 segundos.");
+          setIsProcessingAudio(false);
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        await processAudioMessage(audioBlob, mimeType);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 30) { // Limit to 30 seconds
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.error("Error accessing microphone:", err);
+      let msg = "";
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = "Permiso de micrófono denegado. En móviles, es posible que debas abrir la app en una pestaña nueva.";
+      } else {
+        msg = "No se pudo acceder al micrófono: " + (err.message || "Error desconocido");
+      }
+      setRecordingError(msg);
+      setError(msg);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  const processAudioMessage = async (blob: Blob, mimeType: string) => {
+    setIsProcessingAudio(true);
+    try {
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64Audio = (reader.result as string).split(',')[1];
+        const fullBase64 = reader.result as string;
+        
+        // Use Gemini to transcribe and translate
+        const result = await transcribeAudio(base64Audio, mimeType, user.language);
+        
+        if (result.transcription) {
+          // Send as a message
+          const path = `rooms/${room.id}/messages`;
+          await addDoc(collection(db, path), {
+            roomId: room.id,
+            senderId: user.uid,
+            senderName: user.displayName,
+            senderLanguage: user.language,
+            text: result.transcription,
+            audioData: fullBase64, // Store audio data for playback
+            translations: {
+              [user.language]: result.translation
+            },
+            createdAt: serverTimestamp(),
+            readBy: [user.uid],
+            isAudioTranscription: true
+          });
+        }
+      };
+    } catch (err) {
+      console.error("Error processing audio:", err);
+      setError("Error al procesar el audio.");
+    } finally {
+      setIsProcessingAudio(false);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const typingUsers = room.typing ? Object.entries(room.typing)
     .filter(([uid]) => uid !== user.uid)
     .map(([_, name]) => name) : [];
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-gray-50 overflow-hidden">
+    <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden h-full max-h-full md:max-h-screen relative overscroll-none" style={{ height: '100%', maxHeight: '-webkit-fill-available' }}>
       {/* Header */}
       <div className="flex-shrink-0 bg-white p-4 border-b border-gray-100 flex items-center gap-4 shadow-sm z-10">
         <button
@@ -384,17 +529,33 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       {/* Messages */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 md:p-6 pb-10 space-y-4 md:space-y-6 custom-scrollbar min-h-0 overscroll-contain"
+        className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 space-y-4 md:space-y-6 custom-scrollbar min-h-0 overscroll-contain"
       >
         {error && (
-          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1">
-            <p className="mb-1">{error}</p>
+          <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1 relative">
             <button 
-              onClick={() => (window as any).openDiagnostics?.()}
-              className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
+              onClick={() => setError(null)}
+              className="absolute top-2 right-2 text-red-400 hover:text-red-600"
             >
-              Ver detalles técnicos
+              <Check className="w-3 h-3" />
             </button>
+            <p className="mb-2">{error}</p>
+            <div className="flex flex-col gap-2">
+              <a 
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 hover:text-indigo-800 transition-colors underline"
+              >
+                Abrir en una pestaña nueva para habilitar el micrófono
+              </a>
+              <button 
+                onClick={() => (window as any).openDiagnostics?.()}
+                className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
+              >
+                Ver detalles técnicos
+              </button>
+            </div>
           </div>
         )}
         <AnimatePresence initial={false}>
@@ -432,8 +593,17 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                     }`}
                     style={isMe ? { backgroundColor: '#4f46e5', color: '#ffffff' } : { backgroundColor: getUserColorInfo(msg.senderId).hex, color: '#ffffff' }}
                   >
+                    {msg.audioData && (
+                      <div className="mb-3 flex items-center gap-2 bg-black/10 rounded-xl p-2">
+                        <audio 
+                          src={msg.audioData} 
+                          controls 
+                          className={`w-full max-w-[180px] h-8 ${isMe ? 'invert brightness-200' : ''}`}
+                        />
+                      </div>
+                    )}
                     <p className="text-sm leading-relaxed font-medium">
-                      {msg.text || <span className="italic opacity-50">Enviando...</span>}
+                      {translation || msg.text || <span className="italic opacity-50">Enviando...</span>}
                     </p>
                     
                     {translation && translation !== msg.text && (
@@ -509,28 +679,85 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       </AnimatePresence>
 
       {/* Input */}
-      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 z-20 relative">
-        <form onSubmit={handleSendMessage} className="flex gap-3">
-          <input
-            type="text"
-            value={inputText}
-            onChange={handleInputChange}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                handleSendMessage(e);
-              }
-            }}
-            placeholder="Escribe un mensaje..."
-            className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl px-6 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
-          />
-          <button
-            type="submit"
-            disabled={!inputText.trim() || loading}
-            className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none flex-shrink-0"
-            style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+      <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 z-50 sticky bottom-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {recordingError && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-amber-700 flex flex-col gap-2"
           >
-            <Send className="w-5 h-5" />
-          </button>
+            <p className="font-medium">{recordingError}</p>
+            <a 
+              href={window.location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider text-center hover:bg-amber-700 transition-colors"
+            >
+              Abrir en pestaña nueva para grabar
+            </a>
+          </motion.div>
+        )}
+        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+          {isRecording ? (
+            <div className="flex-1 flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              <span className="text-sm font-mono font-bold text-red-600 flex-1">
+                Grabando... {formatTime(recordingTime)}
+              </span>
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="p-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors"
+                style={{ backgroundColor: '#dc2626', color: '#ffffff' }}
+              >
+                <Square className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 relative flex items-center">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={handleInputChange}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      handleSendMessage(e);
+                    }
+                  }}
+                  placeholder={isProcessingAudio ? "Procesando audio..." : "Escribe un mensaje..."}
+                  disabled={isProcessingAudio}
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none disabled:opacity-50"
+                />
+                {isProcessingAudio && (
+                  <div className="absolute right-4">
+                    <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
+                  </div>
+                )}
+              </div>
+              
+              {!inputText.trim() ? (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  disabled={isProcessingAudio}
+                  className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 flex-shrink-0"
+                  style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!inputText.trim() || loading}
+                  className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none flex-shrink-0"
+                  style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              )}
+            </>
+          )}
         </form>
       </div>
       {/* Share Modal */}
