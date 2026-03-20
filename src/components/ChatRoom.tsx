@@ -11,6 +11,44 @@ interface ChatRoomProps {
   onBack: () => void;
 }
 
+const getFlag = (langCode: string) => {
+  const flags: Record<string, string> = {
+    en: '🇺🇸',
+    es: '🇪🇸',
+    fr: '🇫🇷',
+    de: '🇩🇪',
+    it: '🇮🇹',
+    pt: '🇵🇹',
+    zh: '🇨🇳',
+    ja: '🇯🇵',
+    ko: '🇰🇷'
+  };
+  return flags[langCode] || '🏳️';
+};
+
+const COLOR_MAP = {
+  rose: { bg: 'bg-rose-500', hex: '#f43f5e', text: 'text-rose-600', border: 'border-rose-500' },
+  emerald: { bg: 'bg-emerald-500', hex: '#10b981', text: 'text-emerald-600', border: 'border-emerald-500' },
+  sky: { bg: 'bg-sky-500', hex: '#0ea5e9', text: 'text-sky-600', border: 'border-sky-500' },
+  amber: { bg: 'bg-amber-500', hex: '#f59e0b', text: 'text-amber-600', border: 'border-amber-500' },
+  violet: { bg: 'bg-violet-500', hex: '#8b5cf6', text: 'text-violet-600', border: 'border-violet-500' },
+  fuchsia: { bg: 'bg-fuchsia-500', hex: '#d946ef', text: 'text-fuchsia-600', border: 'border-fuchsia-500' },
+  cyan: { bg: 'bg-cyan-500', hex: '#06b6d4', text: 'text-cyan-600', border: 'border-cyan-500' },
+  orange: { bg: 'bg-orange-500', hex: '#f97316', text: 'text-orange-600', border: 'border-orange-500' },
+};
+
+const COLOR_KEYS = Object.keys(COLOR_MAP) as Array<keyof typeof COLOR_MAP>;
+
+const getUserColorInfo = (userId: string) => {
+  if (userId === 'babel-bot') return COLOR_MAP.amber;
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const key = COLOR_KEYS[Math.abs(hash) % COLOR_KEYS.length];
+  return COLOR_MAP[key];
+};
+
 export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -24,17 +62,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
   useEffect(() => {
     setError(null);
     const q = query(
-      collection(db, 'rooms', room.id, 'messages')
+      collection(db, 'rooms', room.id, 'messages'),
+      orderBy('createdAt', 'asc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-      // Sort in memory to avoid index issues
-      const sortedMsgs = msgs.sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || 0;
-        return timeA - timeB;
+      const msgs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          ...data,
+          // Ensure text is never undefined to avoid blank bubbles
+          text: data.text || ''
+        } as Message;
       });
-      setMessages(sortedMsgs);
+      setMessages(msgs);
     }, (err) => {
       console.error("ChatRoom snapshot error:", err);
       setError("Error al cargar los mensajes. Verifica tus permisos.");
@@ -75,6 +116,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         roomId: room.id,
         senderId: user.uid,
         senderName: user.displayName,
+        senderLanguage: user.language,
         text: text,
         translations: {},
         createdAt: serverTimestamp()
@@ -144,6 +186,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
       "Olá! Esta é uma mensagem de teste em português para testar a tradução."
     ];
     const randomMsg = testMessages[Math.floor(Math.random() * testMessages.length)];
+    const randomLangs = ['en', 'fr', 'it', 'de', 'pt'];
+    const randomLang = randomLangs[Math.floor(Math.random() * randomLangs.length)];
     
     const path = `rooms/${room.id}/messages`;
     try {
@@ -151,6 +195,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
         roomId: room.id,
         senderId: 'babel-bot',
         senderName: 'Babel Bot 🤖',
+        senderLanguage: randomLang,
         text: randomMsg,
         translations: {},
         createdAt: serverTimestamp()
@@ -240,27 +285,40 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
                 className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
               >
                 {!isMe && (
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 ml-4">
-                    {msg.senderName}
-                  </span>
+                  <div className="flex items-center gap-2 mb-1 ml-1">
+                    <span className={`text-[10px] font-bold uppercase tracking-widest ${getUserColorInfo(msg.senderId).text}`}>
+                      {msg.senderName}
+                    </span>
+                    {msg.senderLanguage && (
+                      <div className="flex items-center gap-1 bg-gray-100 px-1.5 py-0.5 rounded-md border border-gray-200">
+                        <span className="text-[10px]">{getFlag(msg.senderLanguage)}</span>
+                        <span className="text-[8px] font-black text-gray-500 uppercase">{msg.senderLanguage}</span>
+                      </div>
+                    )}
+                  </div>
                 )}
-                <div className={`max-w-[80%] group relative`}>
-                  <div className={`p-4 rounded-2xl shadow-sm ${
-                    isMe 
-                      ? 'bg-indigo-600 text-white rounded-tr-none' 
-                      : 'bg-white text-gray-900 rounded-tl-none border border-gray-100'
-                  }`}>
-                    <p className="text-sm leading-relaxed">{msg.text}</p>
+                <div className={`max-w-[85%] md:max-w-[80%] group relative`}>
+                  <div 
+                    className={`p-4 rounded-2xl shadow-sm ${
+                      isMe 
+                        ? 'bg-indigo-600 text-white rounded-tr-none' 
+                        : `${getUserColorInfo(msg.senderId).bg} text-white rounded-tl-none`
+                    }`}
+                    style={isMe ? { backgroundColor: '#4f46e5', color: '#ffffff' } : { backgroundColor: getUserColorInfo(msg.senderId).hex, color: '#ffffff' }}
+                  >
+                    <p className="text-sm leading-relaxed font-medium">
+                      {msg.text || <span className="italic opacity-50">Enviando...</span>}
+                    </p>
                     
                     {translation && translation !== msg.text && (
-                      <div className={`mt-3 pt-3 border-t ${isMe ? 'border-indigo-500/50' : 'border-gray-100'}`}>
+                      <div className={`mt-3 pt-3 border-t ${isMe ? 'border-indigo-500/50' : 'border-white/20'}`}>
                         <div className="flex items-center gap-2 mb-1">
-                          <Globe className={`w-3 h-3 ${isMe ? 'text-indigo-200' : 'text-indigo-500'}`} />
-                          <span className={`text-[10px] font-bold uppercase tracking-tighter ${isMe ? 'text-indigo-200' : 'text-indigo-500'}`}>
+                          <Globe className={`w-3 h-3 ${isMe ? 'text-indigo-200' : 'text-white/70'}`} />
+                          <span className={`text-[10px] font-bold uppercase tracking-tighter ${isMe ? 'text-indigo-200' : 'text-white/70'}`}>
                             Traducción ({user.language})
                           </span>
                         </div>
-                        <p className={`text-sm italic ${isMe ? 'text-indigo-50' : 'text-gray-600'}`}>
+                        <p className={`text-sm italic ${isMe ? 'text-indigo-50' : 'text-white/90'}`}>
                           {translation}
                         </p>
                       </div>
@@ -311,6 +369,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
             type="submit"
             disabled={!inputText.trim() || loading}
             className="bg-indigo-600 text-white p-3 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none flex-shrink-0"
+            style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
           >
             <Send className="w-5 h-5" />
           </button>

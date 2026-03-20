@@ -43,6 +43,7 @@
         "roomId": { "type": "string" },
         "senderId": { "type": "string" },
         "senderName": { "type": "string" },
+        "senderLanguage": { "type": "string" },
         "text": { "type": "string" },
         "translations": { "type": "object", "description": "Map of langCode -> translatedText" },
         "createdAt": { "type": "string", "format": "date-time" }

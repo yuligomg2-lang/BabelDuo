@@ -27,6 +27,7 @@ export interface Message {
   roomId: string;
   senderId: string;
   senderName: string;
+  senderLanguage?: string;
   text: string;
   translations: Record<string, string>;
   createdAt: any;

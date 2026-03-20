@@ -178,6 +178,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                 onClick={() => setShowCreate(true)}
                 className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100"
                 title="Crear nueva sala"
+                style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -291,6 +292,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     type="submit"
                     disabled={loading}
                     className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 disabled:opacity-50"
+                    style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
                   >
                     {loading ? 'Creando...' : 'Crear Sala'}
                   </button>
@@ -338,6 +340,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     type="submit"
                     disabled={loading}
                     className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 disabled:opacity-50"
+                    style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
                   >
                     {loading ? 'Uniéndose...' : 'Unirse'}
                   </button>

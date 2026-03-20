@@ -203,7 +203,10 @@ export default function App() {
       <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
         {/* Sidebar / Navigation (Desktop) */}
         <div className="hidden md:flex w-20 bg-white border-r border-gray-100 flex-col items-center py-8 gap-8 z-20">
-          <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
+          <div 
+            className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100"
+            style={{ backgroundColor: '#4f46e5' }}
+          >
             <Globe className="text-white w-6 h-6" />
           </div>
           <nav className="flex flex-col gap-6">

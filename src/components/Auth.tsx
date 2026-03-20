@@ -269,6 +269,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
               onClick={handleSaveSettings}
               disabled={loading}
               className="w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
             >
               Guardar Cambios
             </button>

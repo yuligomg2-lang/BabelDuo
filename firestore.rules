@@ -38,6 +38,7 @@ service cloud.firestore {
     //   - roomId: string (required)
     //   - senderId: string (required, uid)
     //   - senderName: string (required)
+    //   - senderLanguage: string (optional)
     //   - text: string (required, < 2000 chars)
     //   - translations: map (optional)
     //   - createdAt: timestamp (required)
@@ -106,6 +107,7 @@ service cloud.firestore {
       return hasRequiredFields(['roomId', 'senderId', 'senderName', 'text', 'createdAt']) &&
              data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
              data.senderId == request.auth.uid &&
+             (!('senderLanguage' in data) || (data.senderLanguage is string && data.senderLanguage.size() == 2)) &&
              data.createdAt is timestamp;
     }
 
