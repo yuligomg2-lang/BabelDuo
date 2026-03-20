@@ -38,9 +38,10 @@ export const DiagnosticPanel: React.FC = () => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
             className="bg-gray-900 text-white rounded-2xl shadow-2xl border border-gray-800 overflow-hidden flex flex-col"
+            style={{ backgroundColor: '#111827', color: '#ffffff', opacity: 1 }}
           >
             {/* Header */}
-            <div className="p-3 bg-gray-800 flex items-center justify-between border-b border-gray-700">
+            <div className="p-3 bg-gray-800 flex items-center justify-between border-b border-gray-700" style={{ backgroundColor: '#1f2937' }}>
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs font-bold uppercase tracking-wider">Panel de Diagnóstico</span>
@@ -86,7 +87,7 @@ export const DiagnosticPanel: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-300 leading-relaxed mb-2">
+                      <p className="text-xs text-gray-300 leading-relaxed mb-2" style={{ color: '#d1d5db' }}>
                         {err.error}
                       </p>
                       <div className="text-[10px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1 border-t border-gray-700/50 pt-2">

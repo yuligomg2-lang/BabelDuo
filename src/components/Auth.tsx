@@ -45,7 +45,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
         onUserUpdate(newUser);
         setShowSettings(true);
       }
-      localStorage.removeItem('babel_duo_guest');
+      localStorage.removeItem('babel_duo_guest_session');
     } catch (err: any) {
       console.error("Sign in error:", err);
       if (err.code === 'auth/popup-closed-by-user') {
@@ -82,10 +82,30 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
     }, 15000);
 
     try {
+      // Recovery logic: Check for existing guest session
+      const savedGuestData = localStorage.getItem('babel_duo_guest_session');
+      let recoveredRooms: string[] = [];
+      let recoveredName: string | null = null;
+      
+      if (savedGuestData) {
+        try {
+          const session = JSON.parse(savedGuestData);
+          const now = Date.now();
+          const oneDay = 24 * 60 * 60 * 1000;
+          
+          if (now - session.timestamp < oneDay) {
+            recoveredName = session.displayName;
+            recoveredRooms = session.rooms || [];
+          }
+        } catch (e) {
+          console.warn("Error parsing guest session", e);
+        }
+      }
+
       const result = await signInAnonymously(auth);
       const guestUser: UserProfile = {
         uid: result.user.uid,
-        displayName: `Invitado_${result.user.uid.slice(0, 4)}`,
+        displayName: recoveredName || `Invitado_${result.user.uid.slice(0, 4)}`,
         language: 'es',
         interests: [],
         isGuest: true,
@@ -95,9 +115,31 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
       const path = `users/${result.user.uid}`;
       try {
         await setDoc(doc(db, 'users', result.user.uid), guestUser);
+        
+        // Re-join rooms if any were recovered
+        if (recoveredRooms.length > 0) {
+          const { arrayUnion, updateDoc } = await import('../firebase');
+          for (const roomId of recoveredRooms) {
+            try {
+              await updateDoc(doc(db, 'rooms', roomId), {
+                members: arrayUnion(result.user.uid)
+              });
+            } catch (e) {
+              console.warn(`Could not re-join room ${roomId}`, e);
+            }
+          }
+        }
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, path);
       }
+      
+      // Save/Update session in localStorage
+      localStorage.setItem('babel_duo_guest_session', JSON.stringify({
+        uid: result.user.uid,
+        displayName: guestUser.displayName,
+        rooms: recoveredRooms,
+        timestamp: Date.now()
+      }));
       
       onUserUpdate(guestUser);
     } catch (err: any) {
@@ -126,6 +168,21 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
       
       // Save to Firestore for both real and anonymous users to ensure rules pass
       await setDoc(doc(db, 'users', user.uid), updatedUser);
+      
+      // Update guest session in localStorage if applicable
+      if (user.isGuest) {
+        const saved = localStorage.getItem('babel_duo_guest_session');
+        if (saved) {
+          try {
+            const session = JSON.parse(saved);
+            session.displayName = updatedUser.displayName;
+            session.timestamp = Date.now();
+            localStorage.setItem('babel_duo_guest_session', JSON.stringify(session));
+          } catch (e) {
+            console.warn("Error updating guest session in settings", e);
+          }
+        }
+      }
       
       onUserUpdate(updatedUser);
       setShowSettings(false);

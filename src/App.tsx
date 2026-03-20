@@ -130,24 +130,36 @@ export default function App() {
     const handleAutoJoin = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const inviteCode = urlParams.get('invite');
-      if (inviteCode) {
+      if (inviteCode && inviteCode.trim()) {
+        const cleanCode = inviteCode.trim().toUpperCase();
         try {
-          const q = query(collection(db, 'rooms'), where('inviteCode', '==', inviteCode.toUpperCase()), limit(1));
+          const q = query(collection(db, 'rooms'), where('inviteCode', '==', cleanCode), limit(1));
           const snapshot = await getDocs(q);
           if (!snapshot.empty) {
             const roomDoc = snapshot.docs[0];
             const roomData = { id: roomDoc.id, ...roomDoc.data() } as Room;
+            
             if (!roomData.members.includes(user.uid)) {
               await updateDoc(doc(db, 'rooms', roomDoc.id), {
                 members: arrayUnion(user.uid)
               });
+              // Update local members list for the room object
+              roomData.members.push(user.uid);
             }
+            
             setSelectedRoom(roomData);
             // Clear URL param without reload
             window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            console.warn("Auto-join: Room not found for code", cleanCode);
           }
         } catch (error) {
           console.error("Auto-join error:", error);
+          try {
+            handleFirestoreError(error, OperationType.LIST, 'rooms (auto-join)');
+          } catch (e) {
+            // Error already logged to diagnostic panel
+          }
         }
       }
     };

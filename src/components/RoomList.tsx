@@ -101,12 +101,29 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
 
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteCode) return;
+    if (!inviteCode || !inviteCode.trim()) return;
     setLoading(true);
     setError(null);
+    
+    let cleanCode = inviteCode.trim();
+    
+    // If user pasted a full URL, extract the invite code
+    if (cleanCode.includes('?invite=')) {
+      try {
+        const url = new URL(cleanCode);
+        const codeParam = url.searchParams.get('invite');
+        if (codeParam) cleanCode = codeParam;
+      } catch (e) {
+        // Fallback: simple string split if URL parsing fails
+        const parts = cleanCode.split('?invite=');
+        if (parts.length > 1) cleanCode = parts[1].split('&')[0];
+      }
+    }
+    
+    cleanCode = cleanCode.toUpperCase();
     const path = 'rooms';
     try {
-      const q = query(collection(db, 'rooms'), where('inviteCode', '==', inviteCode.toUpperCase()), limit(1));
+      const q = query(collection(db, 'rooms'), where('inviteCode', '==', cleanCode), limit(1));
       
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("La búsqueda de la sala tardó demasiado. Revisa tu conexión.")), 10000)
@@ -130,6 +147,21 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
           });
           // Update local data for immediate UI response
           roomData.members.push(user.uid);
+          
+          // Update guest session in localStorage if applicable
+          if (user.isGuest) {
+            const saved = localStorage.getItem('babel_duo_guest_session');
+            if (saved) {
+              try {
+                const session = JSON.parse(saved);
+                session.rooms = Array.from(new Set([...(session.rooms || []), roomDoc.id]));
+                session.timestamp = Date.now(); // Refresh timestamp
+                localStorage.setItem('babel_duo_guest_session', JSON.stringify(session));
+              } catch (e) {
+                console.warn("Error updating guest session", e);
+              }
+            }
+          }
         } catch (updateErr) {
           handleFirestoreError(updateErr, OperationType.UPDATE, `rooms/${roomDoc.id}`);
         }

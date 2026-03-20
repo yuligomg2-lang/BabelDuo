@@ -81,12 +81,12 @@ service cloud.firestore {
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'displayName', 'language']) &&
              data.uid == request.auth.uid &&
-             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
-             data.language is string && data.language.size() == 2 &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 100 &&
+             data.language is string && data.language.size() >= 2 && data.language.size() <= 10 &&
              (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
-             (!('interests' in data) || (data.interests is list && data.interests.size() <= 20)) &&
+             (!('interests' in data) || (data.interests is list && data.interests.size() <= 50)) &&
              (!('isGuest' in data) || data.isGuest is bool) &&
-             (!('createdAt' in data) || data.createdAt is timestamp);
+             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt == null);
     }
 
     function isValidRoom(data, isUpdate) {
@@ -122,7 +122,7 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data);
       allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
-                    request.resource.data.uid == resource.data.uid;
+                    (!('uid' in resource.data) || request.resource.data.uid == resource.data.uid);
     }
 
     match /rooms/{roomId} {

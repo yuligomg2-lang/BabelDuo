@@ -211,7 +211,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
   };
 
   const handleCopyInvite = () => {
-    navigator.clipboard.writeText(room.inviteCode);
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${room.inviteCode}`;
+    navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
