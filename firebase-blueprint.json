@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A registered or guest user of Babel Dúo",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "language": { "type": "string", "description": "Preferred language code (e.g., 'en', 'es')" },
+        "interests": { "type": "array", "items": { "type": "string" }, "description": "List of topics the user is interested in" },
+        "isGuest": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "language"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A conversation room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "theme": { "type": "string" },
+        "languages": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isPrivate": { "type": "boolean" },
+        "inviteCode": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "theme", "languages", "createdBy", "isPrivate", "inviteCode", "members"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message sent in a room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "translations": { "type": "object", "description": "Map of langCode -> translatedText" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "roomId", "senderId", "senderName", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Conversation rooms"
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a room"
+    }
+  }
+}

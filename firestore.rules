@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required, 1-50 chars)
+    //   - photoURL: string (optional, URL)
+    //   - language: string (required, 2 chars)
+    //   - interests: list (optional, strings)
+    //   - isGuest: boolean (optional)
+    //   - createdAt: timestamp (optional)
+    //
+    // Collection: rooms
+    // Document ID: {roomId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, 1-100 chars)
+    //   - description: string (optional, < 500 chars)
+    //   - theme: string (required, 1-100 chars)
+    //   - languages: list (required, strings)
+    //   - createdBy: string (required, uid)
+    //   - createdAt: timestamp (required)
+    //   - isPrivate: boolean (required)
+    //   - inviteCode: string (required)
+    //   - members: list (required, uids)
+    //   - expiresAt: timestamp (optional)
+    //
+    // Collection: rooms/{roomId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - id: string (required)
+    //   - roomId: string (required)
+    //   - senderId: string (required, uid)
+    //   - senderName: string (required)
+    //   - text: string (required, < 2000 chars)
+    //   - translations: map (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "yuligomg2@gmail.com" && request.auth.token.email_verified == true));
+    }
+    function isGuest() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'displayName', 'language']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
+             data.language is string && data.language.size() == 2 &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('interests' in data) || (data.interests is list && data.interests.size() <= 20)) &&
+             (!('isGuest' in data) || data.isGuest is bool) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidRoom(data, isUpdate) {
+      return hasRequiredFields(['name', 'theme', 'languages', 'createdBy', 'createdAt', 'isPrivate', 'inviteCode', 'members']) &&
+             (!('id' in data) || data.id is string) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.theme is string && data.theme.size() > 0 && data.theme.size() <= 100 &&
+             data.languages is list && data.languages.size() > 0 && data.languages.size() <= 10 &&
+             (isUpdate ? data.createdBy == resource.data.createdBy : data.createdBy == request.auth.uid) &&
+             data.createdAt is timestamp &&
+             data.isPrivate is bool &&
+             data.inviteCode is string &&
+             data.members is list &&
+             (!('expiresAt' in data) || data.expiresAt is timestamp);
+    }
+
+    function isValidMessage(data) {
+      return hasRequiredFields(['roomId', 'senderId', 'senderName', 'text', 'createdAt']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+             data.senderId == request.auth.uid &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
+                    request.resource.data.uid == resource.data.uid;
+    }
+
+    match /rooms/{roomId} {
+      function canReadRoom(roomData) {
+        return !roomData.isPrivate || (isAuthenticated() && request.auth.uid in roomData.members) || isAdmin();
+      }
+
+      // Allow all authenticated users to read room metadata so they can find rooms by invite code
+      // Sensitive data (messages) is protected separately
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() && !isGuest() && isValidRoom(request.resource.data, false);
+      allow update: if isAuthenticated() && (
+        // Allow anyone to join if they have the invite code (checked by app, but rules allow member update)
+        // Or if they are already a member/admin
+        (request.auth.uid in resource.data.members) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) && request.auth.uid in request.resource.data.members) ||
+        isAdmin()
+      ) && isValidRoom(request.resource.data, true);
+      allow delete: if isAuthenticated() && (resource.data.createdBy == request.auth.uid || isAdmin());
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && canReadRoom(get(/databases/$(database)/documents/rooms/$(roomId)).data);
+        allow create: if isAuthenticated() && (
+          request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.members ||
+          !get(/databases/$(database)/documents/rooms/$(roomId)).data.isPrivate
+        ) && isValidMessage(request.resource.data);
+        allow update: if isAuthenticated() && (
+          (resource.data.senderId == request.auth.uid || isAdmin()) && isValidMessage(request.resource.data) ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['translations']) && 
+           request.resource.data.translations is map)
+        );
+        allow delete: if isAuthenticated() && (resource.data.senderId == request.auth.uid || isAdmin());
+      }
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
