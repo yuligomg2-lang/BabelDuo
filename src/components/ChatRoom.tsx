@@ -235,6 +235,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
             onClick={() => setShowShare(true)}
             className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
             title="Compartir código de invitación"
+            style={{ color: '#9ca3af' }}
           >
             <Share2 className="w-5 h-5" />
           </button>
@@ -242,6 +243,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
             onClick={handleSimulateMessage}
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors border border-amber-100"
             title="Simular mensaje en otro idioma para probar traducción"
+            style={{ backgroundColor: '#fffbeb', color: '#d97706' }}
           >
             <Sparkles className="w-3.5 h-3.5" />
             Probar Traducción
@@ -409,6 +411,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room, user, onBack }) => {
               <button
                 onClick={() => setShowShare(false)}
                 className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-colors"
+                style={{ backgroundColor: '#111827', color: '#ffffff' }}
               >
                 Cerrar
               </button>

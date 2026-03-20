@@ -285,6 +285,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     type="button"
                     onClick={() => setShowCreate(false)}
                     className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                    style={{ color: '#6b7280' }}
                   >
                     Cancelar
                   </button>
@@ -333,6 +334,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     type="button"
                     onClick={() => setShowJoin(false)}
                     className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-colors"
+                    style={{ color: '#6b7280' }}
                   >
                     Cancelar
                   </button>

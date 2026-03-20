@@ -180,6 +180,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
         <button
           onClick={handleGuestSignIn}
           className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+          style={{ color: '#4f46e5' }}
         >
           Entrar como invitado
         </button>
@@ -188,6 +189,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
           <button
             onClick={handleSignOut}
             className="mt-8 text-xs text-gray-400 hover:text-gray-600 underline transition-colors"
+            style={{ color: '#9ca3af' }}
           >
             Cerrar sesión actual y reintentar
           </button>

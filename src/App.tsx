@@ -177,12 +177,14 @@ export default function App() {
             <button 
               onClick={() => setLoading(false)}
               className="w-full py-3 bg-white border border-gray-200 rounded-xl text-xs font-bold text-indigo-600 hover:bg-gray-50 transition-all shadow-sm"
+              style={{ backgroundColor: '#ffffff', color: '#4f46e5' }}
             >
               Continuar de todos modos
             </button>
             <button 
               onClick={() => signOut(auth).then(() => window.location.reload())}
               className="w-full py-3 bg-gray-100 rounded-xl text-xs font-bold text-gray-500 hover:bg-gray-200 transition-all"
+              style={{ backgroundColor: '#f3f4f6', color: '#6b7280' }}
             >
               Cerrar sesión y reintentar
             </button>

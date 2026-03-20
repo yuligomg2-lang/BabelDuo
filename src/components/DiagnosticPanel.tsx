@@ -58,6 +58,7 @@ export const DiagnosticPanel: React.FC = () => {
                 <button 
                   onClick={() => setIsOpen(false)}
                   className="p-1 hover:bg-red-500 rounded transition-colors"
+                  style={{ color: '#ffffff' }}
                 >
                   <X className="w-4 h-4" />
                 </button>
