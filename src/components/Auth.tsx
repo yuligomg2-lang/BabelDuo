@@ -48,9 +48,24 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
       localStorage.removeItem('babel_duo_guest');
     } catch (err: any) {
       console.error("Sign in error:", err);
-      setError("Error al iniciar sesión. Por favor, verifica tu conexión.");
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("Cerraste la ventana de Google antes de terminar. Intenta de nuevo.");
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError("Este dominio no está autorizado en tu consola de Firebase. Ve a Authentication > Settings > Authorized domains y añade: " + window.location.hostname);
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError("El inicio de sesión con Google no está habilitado en tu consola de Firebase. Actívalo en Authentication > Sign-in method.");
+      } else if (err.code === 'auth/admin-restricted-operation') {
+        setError("Operación restringida por el administrador. Verifica en la Consola de Firebase: 1. Que el 'Public-facing name' esté configurado en Project Settings. 2. Que el método Google esté habilitado.");
+      } else {
+        setError(`Error (${err.code || 'desconocido'}): ${err.message || 'No se pudo iniciar sesión'}`);
+      }
+      
       if (err.code !== 'auth/popup-closed-by-user') {
-        handleFirestoreError(err, OperationType.WRITE, path);
+        try {
+          handleFirestoreError(err, OperationType.WRITE, path);
+        } catch (e) {
+          console.warn("Firestore error logged but caught locally");
+        }
       }
     } finally {
       setLoading(false);
@@ -85,9 +100,13 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
       }
       
       onUserUpdate(guestUser);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error signing in anonymously:', err);
-      setError("No se pudo entrar como invitado. Intenta más tarde.");
+      if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/admin-restricted-operation') {
+        setError("El acceso para invitados (Anónimo) está restringido. En tu consola de Firebase: 1. Ve a Authentication > Sign-in method y activa 'Anonymous'. 2. Si no te deja guardar, ve a Project Settings y asegúrate de que el 'Public-facing name' esté configurado.");
+      } else {
+        setError(`Error (${err.code}): ${err.message}`);
+      }
     } finally {
       setLoading(false);
       clearTimeout(timeout);

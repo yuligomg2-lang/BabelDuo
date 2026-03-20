@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, auth, db, doc, getDoc, getDocFromServer, handleFirestoreError, OperationType, signOut, updateDoc, arrayUnion, collection, query, where, getDocs, limit } from './firebase';
+import { onAuthStateChanged, auth, db, doc, getDoc, getDocFromServer, handleFirestoreError, OperationType, signOut, updateDoc, arrayUnion, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from './firebase';
 import { UserProfile, Room } from './types';
 import { Auth } from './components/Auth';
 import { RoomList } from './components/RoomList';
@@ -59,6 +59,23 @@ export default function App() {
         if (isMounted) {
           if (userDoc.exists()) {
             setUser(userDoc.data() as UserProfile);
+          } else if (firebaseUser.isAnonymous) {
+            // AUTO-RECOVERY for guests: if signed in but no doc, create it
+            const guestUser: UserProfile = {
+              uid: firebaseUser.uid,
+              displayName: `Invitado_${firebaseUser.uid.slice(0, 4)}`,
+              language: 'es',
+              interests: [],
+              isGuest: true,
+              createdAt: serverTimestamp()
+            };
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), guestUser);
+              setUser(guestUser);
+            } catch (err) {
+              console.error("Error creating guest doc in recovery:", err);
+              setUser(null);
+            }
           } else {
             setUser(null);
           }
