@@ -1,7 +1,23 @@
 import React, { useState } from 'react';
-import { auth, googleProvider, signInWithPopup, signInAnonymously, signOut, db, doc, setDoc, getDoc, handleFirestoreError, OperationType, serverTimestamp } from '../firebase';
+import { 
+  auth, 
+  googleProvider, 
+  signInWithPopup, 
+  signInAnonymously, 
+  signOut, 
+  db, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  handleFirestoreError, 
+  OperationType, 
+  serverTimestamp,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile
+} from '../firebase';
 import { UserProfile, LANGUAGES } from '../types';
-import { Globe, LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { Globe, LogIn, LogOut, User as UserIcon, Mail, Lock, UserPlus } from 'lucide-react';
 
 interface AuthProps {
   user: UserProfile | null;
@@ -14,8 +30,14 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [language, setLanguage] = useState(user?.language || 'es');
   const [interests, setInterests] = useState(user?.interests?.join(', ') || '');
+  
+  // Email/Password state
+  const [authMode, setAuthMode] = useState<'google' | 'email-login' | 'email-register'>('google');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
 
-  const handleSignIn = async () => {
+  const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
     const timeout = setTimeout(() => {
@@ -70,6 +92,62 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
     } finally {
       setLoading(false);
       clearTimeout(timeout);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    if (authMode === 'email-register' && !displayName) {
+      setError("Por favor, ingresa tu nombre.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      let result;
+      if (authMode === 'email-register') {
+        result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, { displayName });
+      } else {
+        result = await signInWithEmailAndPassword(auth, email, password);
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+      
+      if (userDoc.exists()) {
+        onUserUpdate(userDoc.data() as UserProfile);
+      } else {
+        const newUser: UserProfile = {
+          uid: result.user.uid,
+          displayName: result.user.displayName || displayName || 'Usuario',
+          language: 'es',
+          interests: [],
+          isGuest: false,
+          createdAt: serverTimestamp()
+        };
+        await setDoc(doc(db, 'users', result.user.uid), newUser);
+        onUserUpdate(newUser);
+        setShowSettings(true);
+      }
+      localStorage.removeItem('babel_duo_guest_session');
+    } catch (err: any) {
+      console.error("Email auth error:", err);
+      if (err.code === 'auth/email-already-in-use') {
+        setError("Este correo ya está registrado. Intenta iniciar sesión.");
+      } else if (err.code === 'auth/invalid-email') {
+        setError("El correo electrónico no es válido.");
+      } else if (err.code === 'auth/weak-password') {
+        setError("La contraseña es muy débil. Usa al menos 6 caracteres.");
+      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError("Correo o contraseña incorrectos.");
+      } else {
+        setError(`Error: ${err.message}`);
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -200,7 +278,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
 
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center p-8 text-center">
+      <div className="flex flex-col items-center justify-center p-8 text-center w-full max-w-md mx-auto">
         <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-200">
           <Globe className="text-white w-10 h-10" />
         </div>
@@ -210,7 +288,7 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
         </p>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-sm text-red-600 animate-in fade-in slide-in-from-top-2">
+          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-sm text-red-600 animate-in fade-in slide-in-from-top-2 w-full">
             <p className="mb-2">{error}</p>
             <button 
               onClick={() => (window as any).openDiagnostics?.()}
@@ -221,23 +299,107 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
           </div>
         )}
 
-        <button
-          onClick={handleSignIn}
-          disabled={loading}
-          className="flex items-center justify-center gap-3 bg-white border border-gray-200 px-6 py-3 rounded-2xl shadow-sm hover:shadow-md transition-all font-medium text-gray-700 disabled:opacity-50 w-full max-w-xs"
-        >
-          {loading ? (
-            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <LogIn className="w-5 h-5 text-indigo-600" />
-          )}
-          Continuar con Google
-        </button>
+        {authMode === 'google' ? (
+          <div className="flex flex-col gap-4 w-full">
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="flex items-center justify-center gap-3 bg-white border border-gray-200 px-6 py-4 rounded-2xl shadow-sm hover:shadow-md transition-all font-bold text-gray-700 disabled:opacity-50 w-full"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <LogIn className="w-5 h-5 text-indigo-600" />
+              )}
+              Continuar con Google
+            </button>
+
+            <button
+              onClick={() => setAuthMode('email-login')}
+              className="flex items-center justify-center gap-3 bg-indigo-600 text-white px-6 py-4 rounded-2xl shadow-md hover:bg-indigo-700 transition-all font-bold disabled:opacity-50 w-full"
+              style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+            >
+              <Mail className="w-5 h-5" />
+              Usar Correo Electrónico
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleEmailAuth} className="flex flex-col gap-4 w-full animate-in fade-in slide-in-from-bottom-4">
+            {authMode === 'email-register' && (
+              <div className="relative">
+                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Nombre completo"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                  required
+                />
+              </div>
+            )}
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="email"
+                placeholder="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                required
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="password"
+                placeholder="Contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-2xl pl-12 pr-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                required
+                minLength={6}
+              />
+            </div>
+            
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+              style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+            >
+              {loading ? (
+                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
+              ) : (
+                authMode === 'email-login' ? 'Iniciar Sesión' : 'Crear Cuenta'
+              )}
+            </button>
+
+            <div className="flex flex-col gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setAuthMode(authMode === 'email-login' ? 'email-register' : 'email-login')}
+                className="text-sm font-bold text-indigo-600 hover:text-indigo-700 transition-colors"
+              >
+                {authMode === 'email-login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('google');
+                  setError(null);
+                }}
+                className="text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors uppercase tracking-widest"
+              >
+                Volver a opciones
+              </button>
+            </div>
+          </form>
+        )}
 
         <button
           onClick={handleGuestSignIn}
-          className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
-          style={{ color: '#4f46e5' }}
+          className="mt-6 text-sm font-bold text-gray-500 hover:text-indigo-600 transition-colors"
         >
           Entrar como invitado
         </button>
