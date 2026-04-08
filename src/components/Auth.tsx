@@ -419,37 +419,37 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
 
   return (
     <div className="relative">
-      <div className="flex items-center gap-4 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+      <div className="flex items-center gap-3 bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
         <img
           src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`}
           alt={user.displayName}
-          className="w-10 h-10 rounded-xl object-cover"
+          className="w-9 h-9 rounded-xl object-cover"
           referrerPolicy="no-referrer"
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <p className="text-sm font-semibold text-gray-900 truncate">{user.displayName}</p>
             {user.isGuest && (
-              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[8px] font-bold uppercase rounded-md">
+              <span className="px-1 py-0.5 bg-amber-100 text-amber-700 text-[7px] font-bold uppercase rounded-md">
                 Invitado
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
             {LANGUAGES.find(l => l.code === user.language)?.name}
           </p>
         </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
+          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors"
         >
-          <UserIcon className="w-5 h-5" />
+          <UserIcon className="w-4 h-4" />
         </button>
         <button
           onClick={handleSignOut}
-          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-4 h-4" />
         </button>
       </div>
 

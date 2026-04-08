@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, query, orderBy, onSnapshot, addDoc, setDoc, serverTimestamp, handleFirestoreError, OperationType, where, getDocs, limit, updateDoc, doc, arrayUnion } from '../firebase';
 import { Room, UserProfile, LANGUAGES } from '../types';
-import { Hash, Plus, Sparkles, MessageSquare, Search, Link as LinkIcon, Key } from 'lucide-react';
+import { Hash, Plus, Sparkles, MessageSquare, Search, Link as LinkIcon, Key, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RoomListProps {
@@ -193,10 +193,10 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
   );
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Mis Conversaciones</h2>
+    <div className="flex flex-col h-full bg-white">
+      <div className="p-5 md:p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Mis Salas</h2>
           <div className="flex gap-2">
             <button
               onClick={() => setShowJoin(true)}
@@ -257,15 +257,15 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
               <button
                 key={room.id}
                 onClick={() => onSelectRoom(room)}
-                className="flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-2xl text-left hover:bg-gray-50 transition-all group"
+                className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl text-left hover:bg-gray-50 transition-all group"
               >
-                <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-white transition-colors">
-                  <Hash className="w-5 h-5 text-gray-400 group-hover:text-indigo-600" />
+                <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-white transition-colors">
+                  <Hash className="w-4 h-4 text-gray-400 group-hover:text-indigo-600" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-gray-900 truncate">{room.name}</p>
                   <div className="flex items-center gap-2">
-                    <p className="text-xs text-gray-500 truncate">{room.theme}</p>
+                    <p className="text-[11px] text-gray-500 truncate">{room.theme}</p>
                   </div>
                 </div>
               </button>
@@ -283,13 +283,20 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
             className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           >
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8"
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 md:p-8 relative overflow-hidden"
             >
-              <h3 className="text-2xl font-bold text-gray-900 mb-6">Nueva Sala Privada</h3>
-              <form onSubmit={handleCreateRoom} className="space-y-6">
+              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600" />
+              <h3 className="text-2xl font-bold text-gray-900 mb-1">Nueva Sala Privada</h3>
+              <div className="flex items-center gap-2 mb-6 opacity-70">
+                <div className="w-5 h-5 rounded-full bg-indigo-50 flex items-center justify-center">
+                  <User className="w-2.5 h-2.5 text-indigo-600" />
+                </div>
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Creado por: <span className="text-indigo-600">{user.displayName}</span></span>
+              </div>
+              <form onSubmit={handleCreateRoom} className="space-y-5">
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Nombre de la sala</label>
                   <input
@@ -297,7 +304,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     required
                     value={newRoom.name}
                     onChange={(e) => setNewRoom({ ...newRoom, name: e.target.value })}
-                    className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                     placeholder="Ej: Chat Familiar"
                   />
                 </div>
@@ -308,7 +315,7 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
                     required
                     value={newRoom.theme}
                     onChange={(e) => setNewRoom({ ...newRoom, theme: e.target.value })}
-                    className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500"
+                    className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                     placeholder="Ej: Conversaciones privadas"
                   />
                 </div>

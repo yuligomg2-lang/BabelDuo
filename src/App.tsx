@@ -5,8 +5,9 @@ import { Auth } from './components/Auth';
 import { RoomList } from './components/RoomList';
 import { ChatRoom } from './components/ChatRoom';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Globe, MessageSquare, Users, Settings, Terminal } from 'lucide-react';
+import { Globe, MessageSquare, Users, Settings, Terminal, Code, LogOut } from 'lucide-react';
 import { DiagnosticPanel } from './components/DiagnosticPanel';
+import { LayoutDiagram } from './components/LayoutDiagram';
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -14,6 +15,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Iniciando...');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showLayoutMode, setShowLayoutMode] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -223,62 +225,92 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="h-full bg-gray-50 flex flex-col md:flex-row overflow-hidden overscroll-none" style={{ maxHeight: '-webkit-fill-available' }}>
-        {/* Sidebar / Navigation (Desktop) */}
-        <div className="hidden md:flex w-20 bg-white border-r border-gray-100 flex-col items-center py-8 gap-8 z-20">
-          <div 
-            className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100"
-            style={{ backgroundColor: '#4f46e5' }}
-          >
-            <Globe className="text-white w-6 h-6" />
-          </div>
-          <nav className="flex flex-col gap-6">
-            <button className="p-3 text-indigo-600 bg-indigo-50 rounded-xl transition-colors">
-              <MessageSquare className="w-6 h-6" />
-            </button>
-            <button className="p-3 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">
-              <Users className="w-6 h-6" />
-            </button>
-            <button className="p-3 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors">
-              <Settings className="w-6 h-6" />
-            </button>
-            <div className="mt-auto mb-4">
-              <button 
-                onClick={() => {
-                  // We can trigger a fake error or just rely on the panel being there
-                  // Let's just make sure the panel can be opened. 
-                  // I'll add a global function to open it.
-                  (window as any).openDiagnostics?.();
-                }}
-                className="p-3 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
-                title="Diagnóstico"
-              >
-                <Terminal className="w-6 h-6" />
-              </button>
+      <div className="h-screen bg-gray-50 flex flex-col md:flex-row overflow-hidden overscroll-none" style={{ height: '100dvh' }}>
+        {/* Sidebar / Navigation (Desktop Only) */}
+        {user && !showLayoutMode && (
+          <div className="hidden md:flex w-20 bg-white border-r border-gray-200 flex-col items-center py-8 gap-8 z-30 flex-shrink-0 shadow-sm">
+            <div 
+              className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200"
+              style={{ backgroundColor: '#4f46e5' }}
+            >
+              <Globe className="text-white w-6 h-6" />
             </div>
-          </nav>
-        </div>
+            <nav className="flex flex-col gap-6">
+              <button className="p-3 text-indigo-600 bg-indigo-50 rounded-xl transition-all hover:scale-110 active:scale-95">
+                <MessageSquare className="w-6 h-6" />
+              </button>
+              <button className="p-3 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all hover:scale-110 active:scale-95">
+                <Users className="w-6 h-6" />
+              </button>
+              <button className="p-3 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all hover:scale-110 active:scale-95">
+                <Settings className="w-6 h-6" />
+              </button>
+              <div className="h-px w-8 bg-gray-100 my-2" />
+              <button 
+                onClick={() => setShowLayoutMode(!showLayoutMode)}
+                className={`p-3 rounded-xl transition-all hover:scale-110 active:scale-95 ${showLayoutMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'}`}
+                title="Ver Maquetación"
+              >
+                <Code className="w-6 h-6" />
+              </button>
+              <div className="mt-auto mb-4">
+                <button 
+                  onClick={() => {
+                    (window as any).openDiagnostics?.();
+                  }}
+                  className="p-3 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+                  title="Diagnóstico"
+                >
+                  <Terminal className="w-6 h-6" />
+                </button>
+              </div>
+            </nav>
+          </div>
+        )}
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col h-full overflow-hidden relative" style={{ maxHeight: '-webkit-fill-available' }}>
-          {!user ? (
-            <div className="flex-1 flex items-center justify-center overflow-y-auto">
-              <Auth user={user} onUserUpdate={setUser} />
+        <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-white">
+          {showLayoutMode ? (
+            <div className="flex-1 bg-gray-50 p-4 md:p-8 overflow-y-auto flex items-start justify-center z-[100]">
+              <div className="relative w-full max-w-6xl my-4 md:my-8">
+                <div className="absolute -top-12 left-0 right-0 flex justify-between items-center px-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-indigo-600 animate-pulse" />
+                    <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">Modo Maquetación Activo</span>
+                  </div>
+                  <button 
+                    onClick={() => setShowLayoutMode(false)}
+                    className="flex items-center gap-2 bg-white shadow-lg rounded-full px-4 py-2 hover:bg-gray-50 z-50 border border-gray-100 transition-all hover:scale-105 active:scale-95 group"
+                  >
+                    <LogOut className="w-4 h-4 text-gray-500 group-hover:text-indigo-600" />
+                    <span className="text-xs font-bold text-gray-600 group-hover:text-indigo-600">Volver a la App</span>
+                  </button>
+                </div>
+                <div className="animate-in fade-in zoom-in-95 duration-500 shadow-2xl rounded-[48px] overflow-hidden">
+                  <LayoutDiagram />
+                </div>
+              </div>
+            </div>
+          ) : !user ? (
+            <div className="flex-1 flex items-center justify-center overflow-y-auto p-4 bg-gray-50">
+              <div className="w-full max-w-md animate-in fade-in zoom-in-95 duration-500">
+                <Auth user={user} onUserUpdate={setUser} />
+              </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-              {/* Sidebar List */}
-              <div className={`w-full md:w-96 bg-white border-r border-gray-100 flex flex-col min-h-0 ${selectedRoom ? 'hidden md:flex' : 'flex-1 md:flex'}`}>
-                <div className="flex-shrink-0 p-4 border-b border-gray-50">
+            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-white">
+              {/* Sidebar List (Rooms) */}
+              <div className={`${selectedRoom ? 'hidden md:flex' : 'flex'} w-full md:w-[320px] lg:w-[360px] xl:w-[420px] bg-white border-r border-gray-200 flex-col min-h-0 flex-shrink-0 z-10`}>
+                <div className="flex-shrink-0 p-3 border-b border-gray-100 bg-white sticky top-0 z-20">
                   <Auth user={user} onUserUpdate={setUser} />
                 </div>
-                <div className="flex-1 overflow-hidden min-h-0">
+                <div className="flex-1 overflow-hidden min-h-0 bg-white">
                   <RoomList user={user} onSelectRoom={setSelectedRoom} />
                 </div>
               </div>
 
               {/* Chat Area */}
-              <div className={`flex-1 flex flex-col min-h-0 relative h-full ${!selectedRoom ? 'hidden md:flex' : 'flex'}`} style={{ maxHeight: '-webkit-fill-available' }}>
+              <div className={`${!selectedRoom ? 'hidden md:flex' : 'flex'} flex-1 flex flex-col min-h-0 relative h-full bg-white z-0`}>
                 {selectedRoom ? (
                   <ChatRoom 
                     room={selectedRoom} 
@@ -286,12 +318,12 @@ export default function App() {
                     onBack={() => setSelectedRoom(null)} 
                   />
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gray-50/50">
-                    <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center mb-6 shadow-sm border border-gray-100">
-                      <MessageSquare className="w-10 h-10 text-gray-200" />
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gray-50">
+                    <div className="w-16 h-16 md:w-24 md:h-24 bg-white rounded-[30px] md:rounded-[40px] flex items-center justify-center mb-6 shadow-sm border border-gray-100">
+                      <MessageSquare className="w-8 h-8 md:w-10 md:h-10 text-gray-200" />
                     </div>
                     <h2 className="text-xl font-bold text-gray-900 mb-2">Selecciona una sala</h2>
-                    <p className="text-gray-400 text-sm max-w-xs">
+                    <p className="text-gray-400 text-sm max-w-xs px-4">
                       Elige una sala de la lista o crea una nueva para empezar a chatear con traducción automática.
                     </p>
                   </div>
@@ -302,7 +334,10 @@ export default function App() {
         </main>
       </div>
 
-      <DiagnosticPanel />
+      {/* Diagnostic Panel - Hidden on mobile */}
+      <div className="hidden lg:block">
+        <DiagnosticPanel />
+      </div>
 
       <style>{`
         body {

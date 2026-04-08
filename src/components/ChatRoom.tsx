@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, handleFirestoreError, OperationType, arrayUnion, deleteField, deleteDoc, arrayRemove } from '../firebase';
 import { Room, UserProfile, Message } from '../types';
 import { translateMessage, transcribeAudio } from '../services/geminiService';
-import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check, CheckCheck, Trash2, LogOut, Mic, Square, Loader2 } from 'lucide-react';
+import { Send, ChevronLeft, Globe, User as UserIcon, Clock, Sparkles, Share2, Copy, Check, CheckCheck, Trash2, LogOut, Mic, Square, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ChatRoomProps {
@@ -347,13 +347,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   const startRecording = async () => {
     setRecordingError(null);
     try {
-      const isInIframe = window.self !== window.top;
-      
-      if (isInIframe) {
-        setRecordingError("El micrófono está bloqueado por seguridad dentro del visor. Por favor, abre la aplicación en una pestaña nueva usando el botón de abajo.");
-        return;
-      }
-
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Tu navegador no soporta la grabación de audio o está bloqueada por seguridad.");
       }
@@ -386,8 +379,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        if (audioBlob.size > 700000) {
-          setError("El audio es demasiado largo. Intenta grabar menos de 30 segundos.");
+        if (audioBlob.size < 1000) { // Too small, probably silence or error
+          setError("El audio grabado es demasiado corto o no contiene datos.");
+          setIsProcessingAudio(false);
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+        if (audioBlob.size > 1000000) { // 1MB limit for Firestore docs
+          setError("El audio es demasiado pesado. Intenta grabar menos de 20 segundos.");
           setIsProcessingAudio(false);
           stream.getTracks().forEach(track => track.stop());
           return;
@@ -402,7 +401,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime(prev => {
-          if (prev >= 30) { // Limit to 30 seconds
+          if (prev >= 25) { // Limit to 25 seconds for safety
             stopRecording();
             return prev;
           }
@@ -412,10 +411,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
     } catch (err: any) {
       console.error("Error accessing microphone:", err);
       let msg = "";
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = "Permiso de micrófono denegado. En móviles, es posible que debas abrir la app en una pestaña nueva.";
+      const isInIframe = window.self !== window.top;
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.name === 'SecurityError') {
+        msg = "El acceso al micrófono fue denegado o bloqueado.";
+        if (isInIframe) {
+          msg += " Por seguridad, los navegadores bloquean el micrófono dentro de visores. Por favor, abre la app en una pestaña nueva.";
+        }
       } else {
-        msg = "No se pudo acceder al micrófono: " + (err.message || "Error desconocido");
+        msg = "No se pudo activar el micrófono: " + (err.message || "Error desconocido");
       }
       setRecordingError(msg);
       setError(msg);
@@ -462,6 +466,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
             readBy: [user.uid],
             isAudioTranscription: true
           });
+        } else {
+          setError("No se pudo transcribir el audio. Asegúrate de hablar claro y que no haya mucho ruido.");
         }
       };
     } catch (err) {
@@ -551,26 +557,29 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
         className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 space-y-4 md:space-y-6 custom-scrollbar min-h-0 overscroll-contain"
       >
         {error && (
-          <div className="p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-1 relative shadow-sm">
+          <div className="p-5 bg-red-50 border border-red-100 rounded-3xl text-xs text-red-600 text-center animate-in fade-in slide-in-from-top-2 relative shadow-md max-w-sm mx-auto my-4">
             <button 
               onClick={() => setError(null)}
-              className="absolute top-2 right-2 text-red-400 hover:text-red-600 p-1"
+              className="absolute top-3 right-3 text-red-400 hover:text-red-600 p-1.5 bg-white rounded-full shadow-sm transition-colors"
             >
-              <Check className="w-4 h-4" />
+              <X className="w-4 h-4" />
             </button>
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <Mic className="w-5 h-5 text-red-600" />
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center shadow-inner">
+                <Mic className="w-6 h-6 text-red-600" />
               </div>
-              <p className="font-medium text-sm leading-tight">{error}</p>
+              <div className="space-y-1">
+                <p className="font-bold text-sm text-red-700">Problema con el Micrófono</p>
+                <p className="text-red-600/80 leading-relaxed">{error}</p>
+              </div>
               
-              <div className="flex flex-col gap-2 w-full">
+              <div className="flex flex-col gap-3 w-full pt-2">
                 <button 
                   onClick={() => {
                     setError(null);
                     startRecording();
                   }}
-                  className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold uppercase tracking-wider hover:bg-red-700 transition-colors"
+                  className="bg-red-600 text-white px-6 py-3 rounded-2xl font-bold uppercase tracking-wider hover:bg-red-700 transition-all shadow-lg shadow-red-100 active:scale-95"
                 >
                   Reintentar Grabación
                 </button>
@@ -579,17 +588,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                   href={window.location.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 hover:text-indigo-800 transition-colors underline py-2"
+                  className="bg-white text-indigo-600 border-2 border-indigo-600 px-6 py-3 rounded-2xl font-bold uppercase tracking-wider hover:bg-indigo-50 transition-all text-center shadow-sm active:scale-95"
                 >
-                  Abrir en una pestaña nueva (Recomendado para móviles)
+                  Abrir en Pestaña Nueva
                 </a>
                 
-                <button 
-                  onClick={() => (window as any).openDiagnostics?.()}
-                  className="text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  Ver detalles técnicos
-                </button>
+                <p className="text-[10px] text-gray-400 font-medium px-4">
+                  Recomendado para móviles y para evitar bloqueos de seguridad del navegador.
+                </p>
               </div>
             </div>
           </div>
@@ -598,28 +604,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
           {messages.map((msg) => {
             const isMe = msg.senderId === user.uid;
             const translation = msg.translations?.[user.language];
-            const isRead = msg.readBy && msg.readBy.length > 1; // At least one other person read it
+            const isRead = msg.readBy && msg.readBy.length > 1;
 
             return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                className={`flex flex-col mb-5 ${isMe ? 'items-end' : 'items-start'}`}
               >
-                <div className={`flex items-center gap-2 mb-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
-                  <span className={`text-[10px] font-bold uppercase tracking-widest ${isMe ? 'text-indigo-600' : getUserColorInfo(msg.senderId).text}`}>
-                    {isMe ? 'Tú' : msg.senderName}
-                  </span>
-                  {(isMe ? user.language : msg.senderLanguage) && (
-                    <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${isMe ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-100 border-gray-200'}`}>
-                      <span className="text-[10px]">{getFlag(isMe ? user.language : msg.senderLanguage!)}</span>
-                      <span className={`text-[8px] font-black uppercase ${isMe ? 'text-indigo-500' : 'text-gray-500'}`}>
-                        {isMe ? user.language : msg.senderLanguage}
-                      </span>
-                    </div>
-                  )}
-                </div>
                 <div className={`max-w-[85%] md:max-w-[80%] group relative`}>
                   <div 
                     className={`p-4 rounded-2xl shadow-sm ${
@@ -629,6 +622,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                     }`}
                     style={isMe ? { backgroundColor: '#4f46e5', color: '#ffffff' } : { backgroundColor: getUserColorInfo(msg.senderId).hex, color: '#ffffff' }}
                   >
+                    {/* Sender Name and Language inside the bubble - Distinct Color */}
+                    <div className="flex items-center justify-between gap-4 mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-black uppercase tracking-widest truncate max-w-[120px] ${isMe ? 'text-indigo-200' : 'text-amber-200'}`}>
+                          {isMe ? 'Tú' : msg.senderName}
+                        </span>
+                      </div>
+                      {(isMe ? user.language : msg.senderLanguage) && (
+                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-white/20 backdrop-blur-sm border border-white/10`}>
+                          <span className="text-[10px]">{getFlag(isMe ? user.language : msg.senderLanguage!)}</span>
+                          <span className="text-[8px] font-black uppercase opacity-90">
+                            {isMe ? user.language : msg.senderLanguage}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                     {msg.audioData && (
                       <div className="mb-3 flex items-center gap-2 bg-black/10 rounded-xl p-2">
                         <audio 
@@ -672,7 +682,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                     </button>
                   )}
                 </div>
-                <div className={`flex items-center gap-1.5 mt-1 ${isMe ? 'mr-1' : 'ml-1'}`}>
+                <div className={`flex items-center gap-1.5 mt-2 ${isMe ? 'mr-1' : 'ml-1'}`}>
                   <Clock className="w-3 h-3 text-gray-300" />
                   <span className="text-[9px] text-gray-400 font-medium">
                     {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
@@ -718,23 +728,6 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
       {/* Input */}
       <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 z-50 sticky bottom-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {recordingError && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-[10px] text-amber-700 flex flex-col gap-2"
-          >
-            <p className="font-medium">{recordingError}</p>
-            <a 
-              href={window.location.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold uppercase tracking-wider text-center hover:bg-amber-700 transition-colors"
-            >
-              Abrir en pestaña nueva para grabar
-            </a>
-          </motion.div>
-        )}
         <form onSubmit={handleSendMessage} className="flex items-center gap-3">
           {isRecording ? (
             <div className="flex-1 flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-2">
