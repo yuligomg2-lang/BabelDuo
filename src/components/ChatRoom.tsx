@@ -69,6 +69,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const processingMessagesRef = useRef<Set<string>>(new Set());
+  const translatingMessagesRef = useRef<Set<string>>(new Set());
 
   // Listen to room updates for typing status
   useEffect(() => {
@@ -123,12 +125,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       // Mark unread messages as read
       msgs.forEach(async (msg) => {
         if (msg.senderId !== user.uid && (!msg.readBy || !msg.readBy.includes(user.uid))) {
+          if (processingMessagesRef.current.has(msg.id)) return;
+          
           try {
+            processingMessagesRef.current.add(msg.id);
             await updateDoc(doc(db, 'rooms', room.id, 'messages', msg.id), {
               readBy: arrayUnion(user.uid)
             });
           } catch (e) {
             console.warn("Error marking message as read:", e);
+          } finally {
+            // Keep it in processing for a bit to allow Firestore update to propagate
+            setTimeout(() => {
+              processingMessagesRef.current.delete(msg.id);
+            }, 3000);
           }
         }
       });
@@ -242,18 +252,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       const untranslatedMessages = messages.filter(msg => 
         msg.senderId !== user.uid && 
         (!msg.translations || !msg.translations[user.language]) &&
-        translatingId !== msg.id
+        !translatingMessagesRef.current.has(msg.id)
       );
 
       if (untranslatedMessages.length > 0) {
-        // Translate the first one found (they will be processed sequentially as the state updates)
-        getTranslation(untranslatedMessages[0]);
+        // Translate the first one found
+        const msgToTranslate = untranslatedMessages[0];
+        translatingMessagesRef.current.add(msgToTranslate.id);
+        getTranslation(msgToTranslate);
       }
     }
-  }, [messages, user.language, translatingId]);
+  }, [messages, user.language]);
 
   const getTranslation = async (message: Message) => {
-    if (message.translations[user.language]) return;
+    if (message.translations && message.translations[user.language]) {
+      translatingMessagesRef.current.delete(message.id);
+      return;
+    }
     
     setTranslatingId(message.id);
     try {
@@ -272,6 +287,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       }
     } finally {
       setTranslatingId(null);
+      // We keep it in the set until the next messages update confirmed it has the translation
+      // or we can remove it here if we trust the messages state will update soon
+      setTimeout(() => {
+        translatingMessagesRef.current.delete(message.id);
+      }, 5000);
     }
   };
 

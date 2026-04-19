@@ -179,6 +179,8 @@ export default function App() {
     handleAutoJoin();
   }, [user?.uid]);
 
+  const handleBack = React.useCallback(() => setSelectedRoom(null), []);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -315,7 +317,7 @@ export default function App() {
                   <ChatRoom 
                     room={selectedRoom} 
                     user={user} 
-                    onBack={() => setSelectedRoom(null)} 
+                    onBack={handleBack} 
                   />
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gray-50">
