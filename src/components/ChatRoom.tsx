@@ -43,6 +43,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   const [loadingAction, setLoadingAction] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState<string | null>(null); // messageId
+  const [ttsReadyMap, setTtsReadyMap] = useState<Record<string, string>>({}); // messageId -> blobUrl
   const [micStatus, setMicStatus] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
   
   // Audio Recording State
@@ -54,19 +55,49 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    // Audio Unlocker for browser policies
+    const unlockAudio = () => {
+      const audio = new Audio();
+      audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFWm51bQAAAAADAAEAQO8AAEAfAABAAgAAAgAAAA==';
+      audio.play().then(() => {
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+      }).catch(() => {});
+    };
+
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
+
   const roomId = initialRoom.id || (initialRoom as any)._id;
   const isOwner = initialRoom.createdBy === user.uid;
 
   useEffect(() => {
+    const isInIframe = window.self !== window.top;
+    
     if (navigator.permissions && (navigator.permissions as any).query) {
       navigator.permissions.query({ name: 'microphone' as any })
         .then((permissionStatus) => {
+          // If we are in an iframe, we often get 'denied' or 'prompt' but it still fails.
+          // We'll trust the native check but augment it with our iframe check.
           setMicStatus(permissionStatus.state as any);
           permissionStatus.onchange = () => {
             setMicStatus(permissionStatus.state as any);
           };
         })
-        .catch(() => setMicStatus('unknown'));
+        .catch(() => {
+          if (isInIframe) setMicStatus('denied');
+          else setMicStatus('unknown');
+        });
+    } else if (isInIframe) {
+      // Fallback for browsers that don't support permission query (like Safari in some versions)
+      setMicStatus('denied');
     }
   }, []);
 
@@ -180,7 +211,12 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
     
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      
+      // Smart mimeType detection for Safari/iOS compatibility
+      const mimeTypes = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/aac'];
+      const supportedType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+      
+      const mediaRecorder = new MediaRecorder(stream, supportedType ? { mimeType: supportedType } : {});
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -189,7 +225,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: supportedType || 'audio/webm' });
         handleAudioSend(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
@@ -207,9 +243,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
       if (isSecurityError) setMicStatus('denied');
 
       if (isInIframe && isSecurityError) {
-        alert("¡Bloqueado por el Iframe! Los navegadores impiden el uso del micrófono dentro de previsualizaciones integradas por seguridad. Por favor, haz clic en el botón 'ABRIR EN PESTAÑA NUEVA' que acaba de aparecer sobre el chat.");
+        alert("⚠️ BLOQUEO DE SEGURIDAD: Los navegadores impiden el micrófono dentro de cuadros de previsualización. \n\nPASO 1: Pulsa el botón azul 'ABRIR EN PESTAÑA NUEVA' que acaba de aparecer.\nPASO 2: En la nueva pestaña, acepta los permisos cuando el navegador te lo pregunte.");
+      } else if (isSecurityError) {
+        alert("⚠️ PERMISO DENEGADO: El navegador tiene bloqueado el micrófono para este sitio.\n\nCÓMO ACTIVARLO:\n1. Busca el ICONO DEL CANDADO (o círculos) a la izquierda de la dirección web (URL) arriba.\n2. Pulsa en 'Permisos' o 'Configuración del sitio'.\n3. Cambia Micrófono a 'Permitir'.\n4. Refresca la página.");
       } else {
-        alert("No se pudo acceder al micrófono. Revisa si has denegado el permiso por error en la barra de direcciones o si otra aplicación está usando el micrófono.");
+        alert("No se pudo acceder al micrófono. Revisa si otra aplicación lo está usando o si tu dispositivo tiene el hardware desactivado.");
       }
     }
   };
@@ -261,30 +299,59 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
   };
 
   const handleSpeak = async (text: string, messageId: string) => {
+    // If already ready, just play
+    if (ttsReadyMap[messageId]) {
+      playReadyAudio(messageId);
+      return;
+    }
+
     if (isTTSLoading) return;
     setIsTTSLoading(messageId);
     let audioUrl = '';
+
     try {
       audioUrl = await gemini.speak(text);
+      setTtsReadyMap(prev => ({ ...prev, [messageId]: audioUrl }));
+      
       const audio = new Audio(audioUrl);
       
       audio.onended = () => {
         setIsTTSLoading(null);
-        if (audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
       };
       
       audio.onerror = (e) => {
         console.error("Audio playback error:", e);
         setIsTTSLoading(null);
-        if (audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
       };
 
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (playErr: any) {
+        if (playErr.name === 'NotAllowedError') {
+          console.warn("Autoplay blocked, showing manual play button for gesture-less context.");
+          setIsTTSLoading(null);
+          // Return early without throwing so the outer catch doesn't show an error
+          return;
+        }
+        throw playErr;
+      }
     } catch (err) {
       console.error("TTS failed:", err);
       setIsTTSLoading(null);
-      if (audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
     }
+  };
+
+  const playReadyAudio = (messageId: string) => {
+    const url = ttsReadyMap[messageId];
+    if (!url) return;
+    
+    const audio = new Audio(url);
+    audio.play().catch(err => {
+      console.error("Manual play failed:", err);
+      if (err.name === 'NotAllowedError') {
+        alert("Haz clic una vez en la página y vuelve a intentar el sonido.");
+      }
+    });
   };
 
   const handleDeleteRoom = async () => {
@@ -421,14 +488,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                 <div className="flex items-center gap-2 mt-2">
                   <button 
                     onClick={() => handleSpeak(msg.text, msg.id || (msg as any)._id)}
-                    className="p-1 px-2 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors"
+                    className={`p-1 px-2 hover:bg-white/20 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${ttsReadyMap[msg.id || (msg as any)._id] ? 'bg-amber-500 text-white' : 'bg-white/10 text-white'}`}
                   >
                     {isTTSLoading === (msg.id || (msg as any)._id) ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : ttsReadyMap[msg.id || (msg as any)._id] ? (
+                      <Play className="w-3 h-3 fill-current" />
                     ) : (
                       <Volume2 className="w-3 h-3" />
                     )}
-                    Escuchar
+                    {ttsReadyMap[msg.id || (msg as any)._id] ? 'Reproducir' : 'Escuchar'}
                   </button>
                 </div>
 
@@ -469,14 +538,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
                       </div>
                       <button 
                         onClick={() => handleSpeak(translation, (msg.id || (msg as any)._id) + '-tl')}
-                        className="p-1 px-2 bg-white/10 hover:bg-white/20 rounded-lg text-[8px] font-bold tracking-wider flex items-center gap-1 transition-colors"
+                        className={`p-1 px-2 hover:bg-white/20 rounded-lg text-[8px] font-bold tracking-wider flex items-center gap-1 transition-colors ${ttsReadyMap[(msg.id || (msg as any)._id) + '-tl'] ? 'bg-amber-500 text-white' : 'bg-white/10 text-white'}`}
                       >
                          {isTTSLoading === ((msg.id || (msg as any)._id) + '-tl') ? (
                           <Loader2 className="w-2 h-2 animate-spin" />
+                        ) : ttsReadyMap[(msg.id || (msg as any)._id) + '-tl'] ? (
+                          <Play className="w-2 h-2 fill-current" />
                         ) : (
                           <Volume2 className="w-2 h-2" />
                         )}
-                        Oír
+                        {ttsReadyMap[(msg.id || (msg as any)._id) + '-tl'] ? 'Reproducir' : 'Oír'}
                       </button>
                     </div>
                     <p className="text-sm italic text-white/90">{translation}</p>
@@ -506,25 +577,39 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
       {/* Input */}
       <div className="p-4 bg-white border-t safe-area-bottom">
-        {micStatus === 'denied' && (
+        {window.self !== window.top ? (
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-start gap-3 text-amber-800 text-xs"
+            className="mb-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-start gap-3 text-indigo-900 text-xs"
           >
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-indigo-600" />
             <div className="flex-1">
-              <p className="font-bold mb-1">Micrófono bloqueado</p>
-              <p className="leading-relaxed mb-2">
-                El acceso al micrófono está restringido en la previsualización.
+              <p className="font-bold mb-1">Casi listo para traducir voz...</p>
+              <p className="leading-relaxed mb-2 opacity-80">
+                Por seguridad, los navegadores bloquean el micrófono en previsualizaciones. Abre la app en su propia pestaña para activar el audio:
               </p>
               <button 
                 onClick={() => window.open(window.location.href, '_blank')}
-                className="flex items-center gap-2 px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-lg font-medium transition-colors text-[10px]"
+                className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold transition-all text-[10px] animate-pulse shadow-md"
               >
                 <Share2 className="w-3 h-3" />
-                ABRIR EN PESTAÑA NUEVA PARA GRABAR
+                ABRIR EN PESTAÑA NUEVA
               </button>
+            </div>
+          </motion.div>
+        ) : micStatus === 'denied' && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-900 text-xs"
+          >
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
+            <div className="flex-1">
+              <p className="font-bold mb-1">Permiso del Micrófono Denegado</p>
+              <p className="leading-relaxed opacity-80">
+                Has bloqueado el micrófono en esta pestaña. Para activarlo: Pulsa el <b>icono del candado 🔒</b> a la izquierda de la dirección web arriba, activa el Micrófono y recarga la página.
+              </p>
             </div>
           </motion.div>
         )}

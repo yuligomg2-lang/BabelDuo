@@ -10,6 +10,10 @@ const instance = axios.create({
 instance.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 401) {
+      // Identity expired or guest session ended
+      window.dispatchEvent(new CustomEvent('unauthorized-api-call'));
+    }
     if (error.response?.status === 503) {
       console.error('DATABASE ERROR:', error.response.data.details);
       alert('Error de Base de Datos: ' + error.response.data.details);

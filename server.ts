@@ -25,6 +25,23 @@ const io = new Server(httpServer, {
 
 const PORT = 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/babel-duo';
+const GUEST_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+// Cleanup Task: Delete expired guests every hour
+setInterval(async () => {
+  try {
+    const expiryDate = new Date(Date.now() - GUEST_EXPIRY_MS);
+    const result = await User.deleteMany({
+      isGuest: true,
+      createdAt: { $lt: expiryDate }
+    });
+    if (result.deletedCount > 0) {
+      console.log(`Cleanup: Deleted ${result.deletedCount} expired guest users.`);
+    }
+  } catch (err) {
+    console.error('Cleanup Task Error:', err);
+  }
+}, 60 * 60 * 1000); 
 
 app.use(cors());
 app.use(express.json());
@@ -63,6 +80,17 @@ app.get('/api/health', (req, res) => {
 app.get('/api/rooms', async (req, res) => {
   try {
     const userId = req.query.userId as string;
+    
+    // Check if guest is expired
+    const user = await User.findOne({ uid: userId });
+    if (user && user.isGuest) {
+      const age = Date.now() - new Date(user.createdAt).getTime();
+      if (age > GUEST_EXPIRY_MS) {
+        await User.deleteOne({ uid: userId });
+        return res.status(401).json({ error: 'Sesión de invitado expirada (24h). Por favor, inicia sesión de nuevo.' });
+      }
+    }
+
     const rooms = await Room.find({ members: userId }).sort({ updatedAt: -1 });
     res.json(rooms);
   } catch (err: any) {
@@ -140,6 +168,19 @@ app.delete('/api/rooms/:roomId', async (req, res) => {
 
 app.post('/api/users/:uid', async (req, res) => {
   try {
+    const { uid } = req.params;
+
+    // Check if we are trying to update an expired guest
+    const existingUser = await User.findOne({ uid });
+    if (existingUser && existingUser.isGuest) {
+      const age = Date.now() - new Date(existingUser.createdAt).getTime();
+      if (age > GUEST_EXPIRY_MS) {
+        // If expired, we delete it so the upsert creates a fresh one (or we could return 401)
+        console.log(`User ${uid} guest expired, deleting before update.`);
+        await User.deleteOne({ uid });
+      }
+    }
+
     const user = await User.findOneAndUpdate(
       { uid: req.params.uid },
       { $set: req.body },

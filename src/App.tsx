@@ -25,12 +25,36 @@ export default function App() {
   }, [selectedRoom]);
 
   useEffect(() => {
-    // Check for cached user in localStorage to avoid initial login screen flash
+    // Global Audio Unlock for mobile browsers
+    const unlockAudio = () => {
+      const audio = new Audio();
+      audio.play().catch(() => {});
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      console.log("Audio system unlocked");
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('touchstart', unlockAudio);
+
+    // Initial user restoration
     const cachedUser = localStorage.getItem('babel_duo_user');
     if (cachedUser) {
       try {
         const parsed = JSON.parse(cachedUser);
         if (parsed && typeof parsed === 'object' && parsed.uid) {
+          
+          // CHECK EXPIRY FOR GUESTS
+          if (parsed.isGuest && parsed.createdAt) {
+            const age = Date.now() - new Date(parsed.createdAt).getTime();
+            if (age > 24 * 60 * 60 * 1000) {
+              console.log("Cached guest expired, clearing...");
+              localStorage.removeItem('babel_duo_user');
+              localStorage.removeItem('babel_duo_room_id');
+              signOut(auth);
+              return;
+            }
+          }
+
           setUser(parsed);
           
           // Try restoring room immediately if we have cached user
@@ -69,6 +93,16 @@ export default function App() {
            isGuest: firebaseUser.isAnonymous
         });
         
+        // Final check on saved user in case backend says it's new but fireauth had it old
+        if (savedUser.isGuest && savedUser.createdAt) {
+          const age = Date.now() - new Date(savedUser.createdAt).getTime();
+          if (age > 24 * 60 * 60 * 1000) {
+            console.warn("Guest session expired on sync");
+            signOut(auth);
+            return;
+          }
+        }
+
         setUser(savedUser);
         localStorage.setItem('babel_duo_user', JSON.stringify(savedUser));
 
@@ -104,6 +138,17 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      console.warn("Unauthorized API call detected, signing out...");
+      signOut(auth);
+      alert("Tu sesión de invitado ha expirado (límite de 24 horas).");
+    };
+
+    window.addEventListener('unauthorized-api-call', handleUnauthorized);
+    return () => window.removeEventListener('unauthorized-api-call', handleUnauthorized);
+  }, []);
+
   const handleBack = React.useCallback(() => setSelectedRoom(null), []);
 
   if (loading && !user) {
@@ -117,7 +162,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="h-[100dvh] w-full bg-white flex flex-col md:flex-row overflow-hidden">
+      <div className="h-[100dvh] w-full bg-white flex flex-col md:flex-row overflow-hidden fixed inset-0">
         {/* Connection Warning Overlay */}
         {user === null && !loading && (
           <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-red-600 text-white p-4 rounded-2xl shadow-2xl z-[100] animate-in slide-in-from-bottom-5">
@@ -130,7 +175,7 @@ export default function App() {
           </div>
         )}
         {user && (
-          <div className="hidden md:flex w-20 bg-white border-r flex-col items-center py-8 gap-8">
+          <div className="hidden md:flex w-20 bg-white border-r flex-col items-center py-8 gap-8 h-full">
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
               <Globe className="text-white w-6 h-6" />
             </div>
@@ -142,19 +187,19 @@ export default function App() {
           </div>
         )}
 
-        <main className="flex-1 flex flex-col h-full bg-white relative">
+        <main className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
           {!user ? (
-            <div className="flex-1 flex items-center justify-center p-4 bg-gray-50">
+            <div className="flex-1 flex items-center justify-center p-4 bg-gray-50 h-full overflow-y-auto">
               <Auth user={user} onUserUpdate={setUser} />
             </div>
           ) : (
-            <div className="flex-1 flex flex-col md:flex-row h-full">
-              <div className={`${selectedRoom ? 'hidden md:flex' : 'flex'} w-full md:w-[360px] border-r flex-col`}>
+            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+              <div className={`${selectedRoom ? 'hidden md:flex' : 'flex'} w-full md:w-[360px] border-r flex-col h-full overflow-hidden`}>
                 <div className="p-3 border-b"><Auth user={user} onUserUpdate={setUser} /></div>
                 <RoomList user={user} onSelectRoom={setSelectedRoom} />
               </div>
 
-              <div className={`${!selectedRoom ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full`}>
+              <div className={`${!selectedRoom ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
                 {selectedRoom ? (
                   <ChatRoom room={selectedRoom} user={user} onBack={handleBack} />
                 ) : (
