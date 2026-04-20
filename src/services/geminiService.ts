@@ -1,75 +1,111 @@
 import { GoogleGenAI } from "@google/genai";
-import { Room, UserProfile } from "../types";
 
+// Initialize the Gemini API client
+// Note: In this environment, GEMINI_API_KEY is automatically provided in process.env
+const ai = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY || '' 
+});
 
-export async function translateMessage(text: string, targetLang: string): Promise<string> {
-  if (!text) return "";
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-    const model = ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Translate the following text to the language with code "${targetLang}". Only return the translated text, nothing else.\n\nText: ${text}`,
-    });
-    const response = await model;
-    return response.text?.trim() || text;
-  } catch (error) {
-    console.error("Translation error:", error);
-    return text;
-  }
-}
+export const gemini = {
+  translate: async (text: string, targetLang: string): Promise<string> => {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Translate the following text to ${targetLang}. Only return the translation, nothing else. Text: "${text}"`,
+      });
+      
+      return response.text?.trim() || text;
+    } catch (error) {
+      console.error("Gemini Translation Error:", error);
+      throw error;
+    }
+  },
 
-export async function getRoomSuggestions(user: UserProfile, rooms: Room[]): Promise<string[]> {
-  if (rooms.length === 0) return [];
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-    const roomsData = rooms.map(r => ({ id: r.id, name: r.name, theme: r.theme, languages: r.languages }));
-    const prompt = `Given a user with language "${user.language}" and interests: ${user.interests.join(", ") || "none"}.
-    And a list of chat rooms: ${JSON.stringify(roomsData)}.
-    Suggest the top 3 most relevant room IDs for this user. Return only a JSON array of strings (the IDs).`;
-
-    const model = ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
-    const response = await model;
-    const ids = JSON.parse(response.text || "[]");
-    return ids;
-  } catch (error) {
-    console.error("Suggestion error:", error);
-    return [];
-  }
-}
-
-export async function transcribeAudio(base64Audio: string, mimeType: string, targetLang: string): Promise<{ transcription: string; translation: string }> {
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
+  transcribe: async (base64Audio: string, mimeType: string): Promise<string> => {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [
           {
             inlineData: {
-              data: base64Audio,
-              mimeType: mimeType,
-            },
+              mimeType,
+              data: base64Audio
+            }
           },
           {
-            text: `Transcribe this audio. Then, translate the transcription to the language with code "${targetLang}". 
-            Return the result in JSON format with two fields: "transcription" and "translation". 
-            Only return the JSON object, nothing else.`,
-          },
+            text: "Transcribe the audio exactly. If you detect the language, transcribe it in that language. Only return the transcription, nothing else."
+          }
         ],
-      },
-      config: {
-        responseMimeType: "application/json",
-      },
-    });
+      });
+      
+      return response.text?.trim() || "No se pudo transcribir el audio.";
+    } catch (error) {
+      console.error("Gemini Transcription Error:", error);
+      throw error;
+    }
+  },
 
-    const result = JSON.parse(response.text || '{"transcription": "", "translation": ""}');
-    return result;
-  } catch (error) {
-    console.error("Audio transcription/translation error:", error);
-    return { transcription: "", translation: "" };
+  speak: async (text: string, voiceName: 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr' = 'Kore'): Promise<string> => {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-flash-tts-preview",
+        contents: [{ parts: [{ text: `Read this aloud clearly: ${text}` }] }],
+        config: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName },
+            },
+          },
+        },
+      });
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+      if (!base64Audio) throw new Error("No audio data received from Gemini TTS");
+      
+      // Gemini TTS returns raw PCM (Linear16, Mono, 24kHz).
+      // Browsers requires a container (like WAV) to play audio via the Audio object.
+      const rawData = atob(base64Audio);
+      const buffer = new ArrayBuffer(44 + rawData.length);
+      const view = new DataView(buffer);
+      
+      const writeString = (offset: number, s: string) => {
+        for (let i = 0; i < s.length; i++) {
+          view.setUint8(offset + i, s.charCodeAt(i));
+        }
+      };
+      
+      const sampleRate = 24000;
+      const numChannels = 1;
+      const bitsPerSample = 16;
+      
+      // RIFF header
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + rawData.length, true);
+      writeString(8, 'WAVE');
+      // fmt subchunk
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * bitsPerSample / 8, true);
+      view.setUint16(32, numChannels * bitsPerSample / 8, true);
+      view.setUint16(34, bitsPerSample, true);
+      // data subchunk
+      writeString(36, 'data');
+      view.setUint32(40, rawData.length, true);
+      
+      // Write PCM data
+      for (let i = 0; i < rawData.length; i++) {
+        view.setUint8(44 + i, rawData.charCodeAt(i));
+      }
+      
+      const blob = new Blob([buffer], { type: 'audio/wav' });
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error("Gemini TTS Error:", error);
+      throw error;
+    }
   }
-}
+};

@@ -3,7 +3,7 @@
 @layer base {
   html, body, #root {
     height: 100%;
-    height: -webkit-fill-available;
+    height: 100dvh;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -12,4 +12,27 @@
   button, a {
     touch-action: manipulation;
   }
+}
+
+@layer utilities {
+  .safe-area-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+  }
+  
+  @media (min-width: 768px) {
+    .safe-area-bottom {
+      padding-bottom: 1rem;
+    }
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
 }

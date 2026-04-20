@@ -25,7 +25,7 @@ setPersistence(auth, browserLocalPersistence).catch(err => {
 
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: 'select_account' });
+// Removed prompt: 'select_account' to allow automatic session restoration when possible
 
 export { 
   signInWithPopup, 

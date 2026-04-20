@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { db, collection, query, orderBy, onSnapshot, addDoc, setDoc, serverTimestamp, handleFirestoreError, OperationType, where, getDocs, limit, updateDoc, doc, arrayUnion } from '../firebase';
-import { Room, UserProfile, LANGUAGES } from '../types';
-import { Hash, Plus, Sparkles, MessageSquare, Search, Link as LinkIcon, Key, User } from 'lucide-react';
+import { Room, UserProfile } from '../types';
+import { api } from '../services/apiService';
+import { Hash, Plus, Key, Search, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface RoomListProps {
@@ -11,89 +11,48 @@ interface RoomListProps {
 
 export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showJoin, setShowJoin] = useState(false);
-  const [inviteCode, setInviteCode] = useState('');
-  const [newRoom, setNewRoom] = useState({ name: '', theme: '', languages: [user.language] });
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [newRoom, setNewRoom] = useState({ name: '', theme: '' });
+
+  const fetchRooms = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getRooms(user.uid);
+      setRooms(data);
+    } catch (err) {
+      setError('Error al cargar salas');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!user.uid) return;
-    
-    // Simplified query to avoid composite index requirement
-    const q = query(
-      collection(db, 'rooms'), 
-      where('members', 'array-contains', user.uid)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const roomsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room));
-      // Sort in memory instead of Firestore to avoid index issues
-      const sortedRooms = roomsData.sort((a, b) => {
-        const timeA = a.createdAt?.toMillis?.() || 0;
-        const timeB = b.createdAt?.toMillis?.() || 0;
-        return timeB - timeA;
-      });
-      setRooms(sortedRooms);
-    }, (err) => {
-      console.error("RoomList snapshot error:", err);
-      setError("Error al cargar las salas. Por favor, intenta de nuevo.");
-    });
-    return () => unsubscribe();
+    fetchRooms();
   }, [user.uid]);
-
-  const generateInviteCode = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-  };
 
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (user.isGuest) {
-      setError("Los invitados no pueden crear salas. Por favor, inicia sesión con Google.");
-      return;
-    }
-    if (!newRoom.name || !newRoom.theme) return;
-    setLoading(true);
-    setError(null);
-    
-    const roomId = doc(collection(db, 'rooms')).id;
-    const path = `rooms/${roomId}`;
-    
+    if (!newRoom.name.trim()) return;
+
     try {
-      // Add a timeout to the creation process
-      const createPromise = setDoc(doc(db, 'rooms', roomId), {
-        id: roomId,
+      setLoading(true);
+      const createdRoom = await api.createRoom({
         name: newRoom.name,
-        theme: newRoom.theme,
-        languages: newRoom.languages,
-        createdBy: user.uid,
-        createdAt: serverTimestamp(),
-        isPrivate: true,
-        inviteCode: generateInviteCode(),
-        members: [user.uid]
+        theme: newRoom.theme || 'General',
+        members: [user.uid],
+        createdBy: user.uid
       });
-
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("La creación de la sala tardó demasiado. Revisa tu conexión.")), 10000)
-      );
-
-      await Promise.race([createPromise, timeoutPromise]);
-      
-      setShowCreate(false);
-      setNewRoom({ name: '', theme: '', languages: [user.language] });
-    } catch (err: any) {
-      console.error("Create room error:", err);
-      setError(err.message || "No se pudo crear la sala. Verifica tu conexión o permisos.");
-      
-      // We catch the error from handleFirestoreError to prevent the ErrorBoundary from catching it
-      // and reloading the whole app, which is what the user described as "vuelve a este chat"
-      try {
-        handleFirestoreError(err, OperationType.CREATE, path);
-      } catch (e) {
-        console.warn("Firestore error logged but caught locally to prevent app crash");
-      }
+      setRooms(prev => [createdRoom, ...prev]);
+      setIsModalOpen(false);
+      setNewRoom({ name: '', theme: '' });
+      onSelectRoom(createdRoom);
+    } catch (err) {
+      alert('Error al crear la sala');
     } finally {
       setLoading(false);
     }
@@ -101,120 +60,50 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
 
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteCode || !inviteCode.trim()) return;
-    setLoading(true);
-    setError(null);
-    
-    let cleanCode = inviteCode.trim();
-    
-    // If user pasted a full URL, extract the invite code
-    if (cleanCode.includes('?invite=')) {
-      try {
-        const url = new URL(cleanCode);
-        const codeParam = url.searchParams.get('invite');
-        if (codeParam) cleanCode = codeParam;
-      } catch (e) {
-        // Fallback: simple string split if URL parsing fails
-        const parts = cleanCode.split('?invite=');
-        if (parts.length > 1) cleanCode = parts[1].split('&')[0];
-      }
-    }
-    
-    cleanCode = cleanCode.toUpperCase();
-    const path = 'rooms';
+    if (!joinCode.trim()) return;
+
     try {
-      const q = query(collection(db, 'rooms'), where('inviteCode', '==', cleanCode), limit(1));
-      
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("La búsqueda de la sala tardó demasiado. Revisa tu conexión.")), 10000)
-      );
-
-      const snapshot = await Promise.race([getDocs(q), timeoutPromise]) as any;
-      
-      if (snapshot.empty) {
-        setError('Código de invitación no válido');
-        setLoading(false);
-        return;
-      }
-
-      const roomDoc = snapshot.docs[0];
-      const roomData = { id: roomDoc.id, ...roomDoc.data() } as Room;
-
-      if (!roomData.members.includes(user.uid)) {
-        try {
-          await updateDoc(doc(db, 'rooms', roomDoc.id), {
-            members: arrayUnion(user.uid)
-          });
-          // Update local data for immediate UI response
-          roomData.members.push(user.uid);
-          
-          // Update guest session in localStorage if applicable
-          if (user.isGuest) {
-            const saved = localStorage.getItem('babel_duo_guest_session');
-            if (saved) {
-              try {
-                const session = JSON.parse(saved);
-                session.rooms = Array.from(new Set([...(session.rooms || []), roomDoc.id]));
-                session.timestamp = Date.now(); // Refresh timestamp
-                localStorage.setItem('babel_duo_guest_session', JSON.stringify(session));
-              } catch (e) {
-                console.warn("Error updating guest session", e);
-              }
-            }
-          }
-        } catch (updateErr) {
-          handleFirestoreError(updateErr, OperationType.UPDATE, `rooms/${roomDoc.id}`);
-        }
-      }
-
-      onSelectRoom(roomData);
-      setShowJoin(false);
-      setInviteCode('');
+      setLoading(true);
+      const room = await api.joinRoom(joinCode, user.uid);
+      setRooms(prev => {
+        if (prev.find(r => (r.id || (r as any)._id) === (room.id || (room as any)._id))) return prev;
+        return [room, ...prev];
+      });
+      setIsJoinModalOpen(false);
+      setJoinCode('');
+      onSelectRoom(room);
     } catch (err: any) {
-      console.error("Join room error:", err);
-      setError(err.message || "No se pudo unir a la sala. Intenta de nuevo.");
-      
-      // If it's already a FirestoreErrorInfo (from the inner catch), don't wrap it again
-      if (!err.message.includes('operationType')) {
-        try {
-          handleFirestoreError(err, OperationType.LIST, path);
-        } catch (e) {
-          console.warn("Firestore error logged but caught locally to prevent app crash");
-        }
-      }
+      alert(err.response?.data?.error || 'Error al unirse a la sala');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredRooms = rooms.filter(r => 
-    r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.theme.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredRooms = Array.isArray(rooms) ? rooms.filter(r => 
+    r.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.theme?.toLowerCase().includes(searchTerm.toLowerCase())
+  ) : [];
 
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="p-5 md:p-6">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xl md:text-2xl font-bold text-gray-900 tracking-tight">Mis Salas</h2>
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Mis Salas</h2>
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowJoin(true)}
-              className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors"
-              title="Unirse con código"
+            <button 
+              onClick={() => setIsJoinModalOpen(true)}
+              title="Ingresar código"
+              className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all active:scale-95"
             >
               <Key className="w-5 h-5" />
             </button>
-            {!user.isGuest && (
-              <button
-                onClick={() => setShowCreate(true)}
-                className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100"
-                title="Crear nueva sala"
-                style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            )}
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              title="Crear sala"
+              className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md transition-all active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
@@ -222,173 +111,149 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Buscar en mis salas..."
+            placeholder="Buscar salas..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-gray-50 border-none rounded-xl pl-11 pr-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
           />
         </div>
 
-        <div className="flex items-center gap-2 mb-4">
-          <MessageSquare className="w-4 h-4 text-gray-400" />
-          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Chats Activos</h3>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 animate-in fade-in slide-in-from-top-1">
-            <p className="mb-1">{error}</p>
-            <button 
-              onClick={() => (window as any).openDiagnostics?.()}
-              className="text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors"
+        <div className="space-y-3">
+          {filteredRooms.map(room => (
+            <button
+              key={room.id || (room as any)._id}
+              onClick={() => onSelectRoom(room)}
+              className="w-full flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl text-left hover:bg-gray-50 transition-all group"
             >
-              Ver detalles técnicos
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-white">
+                <Hash className="w-5 h-5 text-gray-400 group-hover:text-indigo-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 truncate">{room.name}</p>
+                <p className="text-[11px] text-gray-500 truncate">{room.theme}</p>
+              </div>
             </button>
-          </div>
-        )}
-        
-        <div className="grid gap-3 overflow-y-auto max-h-[calc(100vh-300px)] pr-2 custom-scrollbar">
-          {filteredRooms.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-              <p className="text-sm text-gray-500 mb-2">No tienes chats activos</p>
-              <p className="text-xs text-gray-400">Crea una sala o únete con un código</p>
-            </div>
-          ) : (
-            filteredRooms.map(room => (
-              <button
-                key={room.id}
-                onClick={() => onSelectRoom(room)}
-                className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl text-left hover:bg-gray-50 transition-all group"
-              >
-                <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-white transition-colors">
-                  <Hash className="w-4 h-4 text-gray-400 group-hover:text-indigo-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate">{room.name}</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-[11px] text-gray-500 truncate">{room.theme}</p>
-                  </div>
-                </div>
-              </button>
-            ))
+          ))}
+          
+          {filteredRooms.length === 0 && !loading && (
+            <div className="text-center py-12 text-gray-400 text-sm">No se encontraron salas</div>
           )}
         </div>
       </div>
 
       <AnimatePresence>
-        {showCreate && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 md:p-8 relative overflow-hidden"
+        {isJoinModalOpen && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl"
             >
-              <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600" />
-              <h3 className="text-2xl font-bold text-gray-900 mb-1">Nueva Sala Privada</h3>
-              <div className="flex items-center gap-2 mb-6 opacity-70">
-                <div className="w-5 h-5 rounded-full bg-indigo-50 flex items-center justify-center">
-                  <User className="w-2.5 h-2.5 text-indigo-600" />
+              <form onSubmit={handleJoinRoom} className="p-8">
+                <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-6">
+                  <Key className="w-8 h-8 text-amber-600" />
                 </div>
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Creado por: <span className="text-indigo-600">{user.displayName}</span></span>
-              </div>
-              <form onSubmit={handleCreateRoom} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Nombre de la sala</label>
-                  <input
-                    type="text"
-                    required
-                    value={newRoom.name}
-                    onChange={(e) => setNewRoom({ ...newRoom, name: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                    placeholder="Ej: Chat Familiar"
-                  />
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Unirse a una Sala</h3>
+                <p className="text-gray-500 text-sm mb-6">Introduce el código de invitación que te compartieron.</p>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Código de Invitación</label>
+                    <input 
+                      autoFocus
+                      required
+                      type="text"
+                      placeholder="Ej: AB12CD"
+                      className="w-full bg-gray-50 border-none rounded-2xl p-4 text-center text-2xl font-black tracking-widest focus:ring-2 focus:ring-amber-500 transition-all uppercase"
+                      value={joinCode}
+                      onChange={e => setJoinCode(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Descripción</label>
-                  <input
-                    type="text"
-                    required
-                    value={newRoom.theme}
-                    onChange={(e) => setNewRoom({ ...newRoom, theme: e.target.value })}
-                    className="w-full bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                    placeholder="Ej: Conversaciones privadas"
-                  />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button
+
+                <div className="flex gap-3 mt-8">
+                  <button 
                     type="button"
-                    onClick={() => setShowCreate(false)}
-                    className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-colors"
-                    style={{ color: '#6b7280' }}
+                    onClick={() => setIsJoinModalOpen(false)}
+                    className="flex-1 px-6 py-4 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors"
                   >
                     Cancelar
                   </button>
-                  <button
+                  <button 
                     type="submit"
-                    disabled={loading}
-                    className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 disabled:opacity-50"
-                    style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
+                    disabled={loading || !joinCode.trim()}
+                    className="flex-[2] bg-amber-600 text-white rounded-2xl px-6 py-4 text-sm font-bold shadow-lg shadow-amber-100 hover:bg-amber-700 disabled:opacity-50 transition-all active:scale-95"
+                  >
+                    {loading ? 'Buscando...' : 'Unirse ahora'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white w-full max-w-sm rounded-[32px] overflow-hidden shadow-2xl"
+            >
+              <form onSubmit={handleCreateRoom} className="p-8">
+                <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6">
+                  <MessageSquare className="w-8 h-8 text-indigo-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 mb-2">Nueva Sala</h3>
+                <p className="text-gray-500 text-sm mb-6">Crea un espacio para chatear y traducir en tiempo real.</p>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Nombre de la sala</label>
+                    <input 
+                      autoFocus
+                      required
+                      type="text"
+                      placeholder="Ej: Desarrollo Web"
+                      className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
+                      value={newRoom.name}
+                      onChange={e => setNewRoom(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">Tema o Propósito</label>
+                    <input 
+                      type="text"
+                      placeholder="Ej: Feedback de UI/UX"
+                      className="w-full bg-gray-50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
+                      value={newRoom.theme}
+                      onChange={e => setNewRoom(prev => ({ ...prev, theme: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-8">
+                  <button 
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 px-6 py-4 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={loading || !newRoom.name.trim()}
+                    className="flex-[2] bg-indigo-600 text-white rounded-2xl px-6 py-4 text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95"
                   >
                     {loading ? 'Creando...' : 'Crear Sala'}
                   </button>
                 </div>
               </form>
             </motion.div>
-          </motion.div>
-        )}
-
-        {showJoin && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8"
-            >
-              <h3 className="text-2xl font-bold text-gray-900 mb-6">Unirse a Sala</h3>
-              <form onSubmit={handleJoinRoom} className="space-y-6">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Código de Invitación</label>
-                  <input
-                    type="text"
-                    required
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
-                    className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 uppercase font-mono tracking-widest"
-                    placeholder="ABCDEF"
-                  />
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowJoin(false)}
-                    className="flex-1 px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition-colors"
-                    style={{ color: '#6b7280' }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex-1 bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 disabled:opacity-50"
-                    style={{ backgroundColor: '#4f46e5', color: '#ffffff' }}
-                  >
-                    {loading ? 'Uniéndose...' : 'Unirse'}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
