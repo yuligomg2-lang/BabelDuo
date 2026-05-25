@@ -80,26 +80,42 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
 
   useEffect(() => {
     const isInIframe = window.self !== window.top;
+    console.log("Mic system initialized. Context:", isInIframe ? "Iframe" : "Main Tab");
     
     if (navigator.permissions && (navigator.permissions as any).query) {
       navigator.permissions.query({ name: 'microphone' as any })
         .then((permissionStatus) => {
-          // If we are in an iframe, we often get 'denied' or 'prompt' but it still fails.
-          // We'll trust the native check but augment it with our iframe check.
           setMicStatus(permissionStatus.state as any);
+          console.log("Mic status initial state:", permissionStatus.state);
           permissionStatus.onchange = () => {
+            console.log("Mic status changed to:", permissionStatus.state);
             setMicStatus(permissionStatus.state as any);
           };
         })
-        .catch(() => {
-          if (isInIframe) setMicStatus('denied');
-          else setMicStatus('unknown');
+        .catch((e) => {
+          console.warn("navigator.permissions.query failed:", e);
+          // Don't set to denied automatically, let's keep it unknown
+          setMicStatus('unknown');
         });
-    } else if (isInIframe) {
-      // Fallback for browsers that don't support permission query (like Safari in some versions)
-      setMicStatus('denied');
     }
   }, []);
+
+  const requestMicPermissionManually = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      setMicStatus('granted');
+      alert("✅ Micrófono activado con éxito.");
+    } catch (err: any) {
+      console.error("Manual permission request failed:", err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicStatus('denied');
+        alert("❌ El permiso fue denegado. Por favor, actívalo en los ajustes de tu navegador.");
+      } else {
+        alert("❌ No se pudo activar el micrófono: " + err.message);
+      }
+    }
+  };
 
   useEffect(() => {
     if (!roomId) return;
@@ -239,15 +255,17 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
     } catch (err: any) {
       console.error("Mic access denied:", err);
       
-      const isSecurityError = err.name === 'NotAllowedError' || err.name === 'SecurityError';
+      const isSecurityError = err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'PermissionDeniedError';
       if (isSecurityError) setMicStatus('denied');
 
       if (isInIframe && isSecurityError) {
-        alert("⚠️ BLOQUEO DE SEGURIDAD: Los navegadores impiden el micrófono dentro de cuadros de previsualización. \n\nPASO 1: Pulsa el botón azul 'ABRIR EN PESTAÑA NUEVA' que acaba de aparecer.\nPASO 2: En la nueva pestaña, acepta los permisos cuando el navegador te lo pregunte.");
+        // We stay silent here because the UI already shows a prominent "OPEN IN NEW TAB" warning component for iframes
+        console.warn("Recording blocked by iframe security policy.");
       } else if (isSecurityError) {
-        alert("⚠️ PERMISO DENEGADO: El navegador tiene bloqueado el micrófono para este sitio.\n\nCÓMO ACTIVARLO:\n1. Busca el ICONO DEL CANDADO (o círculos) a la izquierda de la dirección web (URL) arriba.\n2. Pulsa en 'Permisos' o 'Configuración del sitio'.\n3. Cambia Micrófono a 'Permitir'.\n4. Refresca la página.");
+        setError("Acceso al micrófono denegado. Por favor, revisa los permisos del navegador (icono del candado 🔒).");
+        setTimeout(() => setError(null), 5000);
       } else {
-        alert("No se pudo acceder al micrófono. Revisa si otra aplicación lo está usando o si tu dispositivo tiene el hardware desactivado.");
+        alert("No se pudo acceder al micrófono: " + err.message);
       }
     }
   };
@@ -602,14 +620,25 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ room: initialRoom, user, onB
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-900 text-xs"
+            className="mb-3 p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-3 text-red-900 text-xs shadow-sm"
           >
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
             <div className="flex-1">
               <p className="font-bold mb-1">Permiso del Micrófono Denegado</p>
-              <p className="leading-relaxed opacity-80">
-                Has bloqueado el micrófono en esta pestaña. Para activarlo: Pulsa el <b>icono del candado 🔒</b> a la izquierda de la dirección web arriba, activa el Micrófono y recarga la página.
+              <p className="leading-relaxed opacity-80 mb-2">
+                El navegador ha bloqueado el micrófono. Para desbloquearlo:
               </p>
+              <ol className="list-decimal list-inside space-y-1 mb-3 opacity-90">
+                <li>Pulsa el icono del <b>candado 🔒</b> junto a la dirección web.</li>
+                <li>Activa el <b>Micrófono</b> (o selecciona 'Permitir').</li>
+                <li>Pulsa el botón de abajo para reintentar.</li>
+              </ol>
+              <button 
+                onClick={requestMicPermissionManually}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-all active:scale-95 shadow-md flex items-center gap-2"
+              >
+                Reintentar Activación
+              </button>
             </div>
           </motion.div>
         )}
