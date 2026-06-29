@@ -154,64 +154,90 @@ export default function App() {
   if (loading && !user) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-gray-50 flex-col gap-4">
-        <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-16 h-16 border-4 border-[#0a3d70] border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-gray-400 font-medium animate-pulse">Conectando a los servicios...</p>
       </div>
     );
   }
 
+  // Not logged in view: clean full screen layout
+  if (!user) {
+    return (
+      <ErrorBoundary>
+        <div className="min-h-[100dvh] w-full bg-[#f8f9fa] flex items-center justify-center p-4 overflow-y-auto">
+          <Auth user={user} onUserUpdate={setUser} />
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
+  // Logged in view: gorgeous WhatsApp Web desktop frame layout
   return (
     <ErrorBoundary>
-      <div className="h-[100dvh] w-full bg-white flex flex-col md:flex-row overflow-hidden fixed inset-0">
-        {/* Connection Warning Overlay */}
-        {user === null && !loading && (
+      <div className="h-[100dvh] w-full bg-[#f0f2f5] md:bg-[#d1d7db] flex items-center justify-center overflow-hidden fixed inset-0 font-sans">
+        {/* Header Accent Band behind the app (WhatsApp Web visual signature) using Babel Duo Navy */}
+        <div className="hidden md:block absolute top-0 left-0 right-0 h-[127px] bg-[#0a3d70] z-0" />
+
+        {/* Database Whitelist Connection Error Overlay */}
+        {user === null && (
           <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-red-600 text-white p-4 rounded-2xl shadow-2xl z-[100] animate-in slide-in-from-bottom-5">
             <h4 className="font-bold mb-1 flex items-center gap-2">
-              <Globe className="w-4 h-4" /> Error de Base de Datos
+              <Globe className="w-4 h-4" /> Error de Conexión
             </h4>
             <p className="text-xs opacity-90 leading-relaxed">
-              No se pudo conectar con MongoDB. Por favor, asegúrate de que la IP de este servidor esté en la lista blanca de Atlas (Whitelist 0.0.0.0/0).
+              No se pudo sincronizar tu sesión de base de datos. Asegúrate de tener conexión estable.
             </p>
           </div>
         )}
-        {user && (
-          <div className="hidden md:flex w-20 bg-white border-r flex-col items-center py-8 gap-8 h-full">
-            <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Globe className="text-white w-6 h-6" />
-            </div>
-            <nav className="flex flex-col gap-6">
-              <button className="p-3 text-indigo-600 bg-indigo-50 rounded-xl"><MessageSquare className="w-6 h-6" /></button>
-              <button className="p-3 text-gray-400 hover:text-indigo-600"><Users className="w-6 h-6" /></button>
-              <button className="p-3 text-gray-400 hover:text-indigo-600"><Settings className="w-6 h-6" /></button>
-            </nav>
-          </div>
-        )}
 
-        <main className="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
-          {!user ? (
-            <div className="flex-1 flex items-center justify-center p-4 bg-gray-50 h-full overflow-y-auto">
+        {/* Outer Desktop Framing Container */}
+        <div className="w-full h-full md:h-[95vh] md:w-[98vw] md:max-w-[1420px] md:rounded-lg md:shadow-2xl overflow-hidden bg-white flex flex-row relative z-10 border border-gray-205/20">
+          
+          {/* Left column: User actions + search + Chat list (Roster) */}
+          <div className={`${selectedRoom ? 'hidden md:flex' : 'flex'} w-full md:w-[350px] lg:w-[380px] border-r border-gray-205/30 flex-col h-full overflow-hidden bg-white shrink-0`}>
+            {/* Header: User settings and info (WhatsApp Web style dark/gray tint) */}
+            <div className="p-3 bg-[#f0f2f5] border-b border-gray-205/30">
               <Auth user={user} onUserUpdate={setUser} />
             </div>
-          ) : (
-            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-              <div className={`${selectedRoom ? 'hidden md:flex' : 'flex'} w-full md:w-[360px] border-r flex-col h-full overflow-hidden`}>
-                <div className="p-3 border-b"><Auth user={user} onUserUpdate={setUser} /></div>
-                <RoomList user={user} onSelectRoom={setSelectedRoom} />
-              </div>
+            
+            {/* Contact list flow */}
+            <RoomList 
+              user={user} 
+              onSelectRoom={setSelectedRoom} 
+              selectedRoomId={selectedRoom?.id || (selectedRoom as any)?._id} 
+            />
+          </div>
 
-              <div className={`${!selectedRoom ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden`}>
-                {selectedRoom ? (
-                  <ChatRoom room={selectedRoom} user={user} onBack={handleBack} />
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-gray-50">
-                    <MessageSquare className="w-16 h-16 text-gray-200 mb-4" />
-                    <h2 className="text-xl font-bold">Selecciona una sala para comenzar</h2>
+          {/* Right column: Chat active dialog / Empty landing view */}
+          <div className={`${!selectedRoom ? 'hidden md:flex' : 'flex'} flex-1 flex-col h-full overflow-hidden bg-[#efeae2]/10 relative`}>
+            {selectedRoom ? (
+              <ChatRoom room={selectedRoom} user={user} onBack={handleBack} onUserUpdate={setUser} />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-[#f8f9fa] relative border-l border-gray-200/30">
+                {/* Decorative background watermark */}
+                <div className="absolute inset-0 bg-radial-gradient from-transparent to-gray-50/50 pointer-events-none" />
+                
+                <div className="relative p-8 max-w-md flex flex-col items-center">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#0a3d70]/5 to-[#ff6000]/5 flex items-center justify-center mb-6 border border-gray-100/40 shadow-inner">
+                    <Globe className="w-12 h-12 text-[#0a3d70]/25 animate-pulse duration-[7s]" />
                   </div>
-                )}
+                  
+                  <h2 className="text-xl font-bold text-gray-800 tracking-tight">Babel Duo para Escritorio</h2>
+                  <p className="text-xs text-gray-400 leading-relaxed mt-2 max-w-sm">
+                    Envía y recibe mensajes en tiempo real con traducción instantánea. Habla en tu idioma nativo y deja que la IA se encargue de la barrera idiomática.
+                  </p>
+                  
+                  <div className="w-full h-[1px] bg-gray-100 my-8" />
+                  
+                  <p className="text-[10px] text-gray-400 flex items-center gap-1.5 opacity-85">
+                    🛡️ Conexión segura e intérprete inteligente integrado
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-        </main>
+            )}
+          </div>
+
+        </div>
       </div>
     </ErrorBoundary>
   );

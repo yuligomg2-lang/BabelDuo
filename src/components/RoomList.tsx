@@ -7,9 +7,10 @@ import { motion, AnimatePresence } from 'motion/react';
 interface RoomListProps {
   user: UserProfile;
   onSelectRoom: (room: Room) => void;
+  selectedRoomId?: string;
 }
 
-export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
+export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom, selectedRoomId }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,60 +86,93 @@ export const RoomList: React.FC<RoomListProps> = ({ user, onSelectRoom }) => {
   ) : [];
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Mis Salas</h2>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setIsJoinModalOpen(true)}
-              title="Ingresar código"
-              className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all active:scale-95"
-            >
-              <Key className="w-5 h-5" />
-            </button>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              title="Crear sala"
-              className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md transition-all active:scale-95"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+    <div className="flex flex-col h-full bg-[#f8f9fa]">
+      {/* Compact Roster Header: Search and quick action icons on a single row */}
+      <div className="p-3 bg-white border-b border-gray-155/35 flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 stroke-[1.5]" />
           <input
             type="text"
             placeholder="Buscar salas..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-gray-50 border-none rounded-xl pl-11 pr-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 transition-all"
+            className="w-full bg-[#f0f2f5] border-none rounded-lg pl-9 pr-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-[#0a3d70]/30 transition-all text-gray-800 placeholder-gray-400 font-medium"
           />
         </div>
+        
+        <div className="flex gap-1 shrink-0">
+          <button 
+            onClick={() => setIsJoinModalOpen(true)}
+            title="Ingresar código de invitación"
+            className="p-1.5 text-gray-500 hover:text-[#ff6000] hover:bg-gray-100 rounded-lg transition-colors active:scale-95"
+          >
+            <Key className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            title="Crear nueva sala"
+            className="p-1.5 bg-[#0a3d70] text-white rounded-lg hover:bg-[#082a4d] transition-colors active:scale-95 shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
 
-        <div className="space-y-3">
-          {filteredRooms.map(room => (
+      {/* Roster Rooms List (Full-Bleed layout like WhatsApp chats) */}
+      <div className="flex-1 overflow-y-auto divide-y divide-[#f0f2f5] bg-white custom-scrollbar">
+        {filteredRooms.map(room => {
+          const roomId = room.id || (room as any)._id;
+          const isActive = roomId === selectedRoomId;
+          const initials = room.name ? room.name.slice(0, 2).toUpperCase() : 'BD';
+          
+          return (
             <button
-              key={room.id || (room as any)._id}
+              key={roomId}
               onClick={() => onSelectRoom(room)}
-              className="w-full flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-2xl text-left hover:bg-gray-50 transition-all group"
+              className={`w-full px-4 py-3 flex items-center gap-3 text-left transition-colors cursor-pointer group border-l-3 ${
+                isActive 
+                  ? 'bg-[#005c53] hover:bg-[#004e46] border-[#005c53]' 
+                  : 'hover:bg-[#f5f6f6] focus:bg-[#f0f2f5] border-transparent focus:border-l-[#0a3d70]'
+              }`}
             >
-              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-white">
-                <Hash className="w-5 h-5 text-gray-400 group-hover:text-indigo-600" />
+              {/* WhatsApp-style round group icon */}
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm shrink-0 border shadow-sm transition-transform duration-300 group-hover:scale-105 ${
+                isActive 
+                  ? 'bg-white text-[#005c53] border-white/10' 
+                  : 'bg-gradient-to-br from-[#0a3d70]/10 to-[#ff6000]/10 text-[#0a3d70] border-gray-100/50'
+              }`}>
+                {initials}
               </div>
+              
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900 truncate">{room.name}</p>
-                <p className="text-[11px] text-gray-500 truncate">{room.theme}</p>
+                <div className="flex items-center justify-between">
+                  <p className={`text-sm font-semibold truncate leading-tight transition-colors ${
+                    isActive ? 'text-white' : 'text-gray-800 group-hover:text-[#0a3d70]'
+                  }`}>
+                    {room.name}
+                  </p>
+                  <span className={`text-[10px] font-medium whitespace-nowrap ml-1 shrink-0 px-1.5 py-0.5 rounded-md ${
+                    isActive ? 'bg-[#004d45] text-teal-100' : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {room.theme || 'General'}
+                  </span>
+                </div>
+                <p className={`text-xs truncate mt-1 ${
+                  isActive ? 'text-[#c4eae6]' : 'text-gray-400'
+                }`}>
+                  Código de sala: <span className={`font-mono font-medium tracking-tight ${isActive ? 'text-white/90' : 'text-[#0a3d70]/75'}`}>{roomId || '---'}</span>
+                </p>
               </div>
             </button>
-          ))}
-          
-          {filteredRooms.length === 0 && !loading && (
-            <div className="text-center py-12 text-gray-400 text-sm">No se encontraron salas</div>
-          )}
-        </div>
+          );
+        })}
+        
+        {filteredRooms.length === 0 && !loading && (
+          <div className="text-center py-16 px-4 bg-gray-50/50">
+            <MessageSquare className="w-8 h-8 text-gray-300 mx-auto mb-2 opacity-60" />
+            <p className="text-xs text-gray-400">No se encontraron salas</p>
+          </div>
+        )}
       </div>
 
       <AnimatePresence>

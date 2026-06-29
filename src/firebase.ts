@@ -10,7 +10,8 @@ import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, limit, serverTimestamp, getDocFromServer, arrayUnion, deleteField, deleteDoc, arrayRemove } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -35,6 +36,7 @@ export {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
+  sendPasswordResetEmail,
   collection, 
   doc, 
   setDoc, 

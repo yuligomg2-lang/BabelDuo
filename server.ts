@@ -153,7 +153,10 @@ app.delete('/api/rooms/:roomId', async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
     
     if (room.createdBy !== userId) {
-      return res.status(403).json({ error: 'Unauthorized to delete this room' });
+      // Si el usuario no es el creador, simplemente sale del grupo
+      room.members = room.members.filter((m: string) => m !== userId);
+      await room.save();
+      return res.json({ success: true, message: 'Has salido de la sala de conversación.' });
     }
 
     await Room.findByIdAndDelete(roomId);
