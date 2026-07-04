@@ -9,7 +9,9 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import Message, { Room, User } from './src/lib/models';
 
-dotenv.config();
+dotenv.config({
+  path:".env.local",
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,6 +27,10 @@ const io = new Server(httpServer, {
 
 const PORT = 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/babel-duo';
+
+console.log("MONGODB_URI:", process.env.MONGODB_URI);
+console.log("URI que usará Mongoose:", MONGODB_URI);
+
 const GUEST_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
 // Cleanup Task: Delete expired guests every hour

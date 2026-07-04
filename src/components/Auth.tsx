@@ -149,7 +149,10 @@ export const Auth: React.FC<AuthProps> = ({ user, onUserUpdate }) => {
       const savedUser = await api.updateUser(result.user.uid, newUser);
       onUserUpdate(savedUser);
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión con Google.');
+      console.error("Código:", err.code);
+      console.error("Mensaje:", err.message);
+      console.error(err);
+      setError(`${err.code}: ${err.message}`);
     } finally {
       setLoading(false);
     }
